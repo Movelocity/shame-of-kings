@@ -12,10 +12,12 @@ export interface FollowCameraConfig {
 }
 
 export const DEFAULT_FOLLOW_CAMERA: FollowCameraConfig = {
+  // 伪 2D:俯视更大(pitch 65°),离场地略远,接近顶视图但保留透视。
+  // yaw/pitch 完全锁死,只有 position 跟随玩家平移。
   fov: 60,
-  pitchDeg: 45,
+  pitchDeg: 65,
   yawDeg: 0,
-  dist: 16,
+  dist: 22,
   aspect: typeof window !== 'undefined' ? window.innerWidth / window.innerHeight : 16 / 9,
   near: 0.1,
   far: 200,
@@ -23,8 +25,8 @@ export const DEFAULT_FOLLOW_CAMERA: FollowCameraConfig = {
 
 export interface FollowCameraHandle {
   camera: PerspectiveCamera;
-  /** 跟随玩家位置;边界软拉:贴地图边界时把相机沿"贴边方向"推回 */
-  follow(playerX: number, playerZ: number, arenaHalf: number, wallPushIn: number): void;
+  /** 跟随玩家位置；相机与玩家的世界空间偏移、pitch、yaw 始终不变 */
+  follow(playerX: number, playerZ: number): void;
   /** 双指缩放:改变 FOV(40-80) */
   setFov(fov: number): void;
   /** 处理窗口 resize */
@@ -36,32 +38,26 @@ export function createFollowCamera(cfg: Partial<FollowCameraConfig> = {}): Follo
   const c = { ...DEFAULT_FOLLOW_CAMERA, ...cfg };
   const camera = new PerspectiveCamera(c.fov, c.aspect, c.near, c.far);
 
+  // 相机位于玩家「面前」的背后 (=MOBA 标配:玩家面向地图深处)。
+  // 约定玩家面对世界 -Z,所以相机的 z 偏玩家 +Z 侧(「玩家背后」),
+  // 此时相机看向 -Z,up × z 的 x 分量为 +X → 相机的 right 指向世界 +X。
+  // 这让 joystick.x>0(屏幕右)= world +X,刚好对应相机画面里的「右」,左右不反。
   const pitchRad = (c.pitchDeg * Math.PI) / 180;
   const yawRad = (c.yawDeg * Math.PI) / 180;
-  const horizOffset = -c.dist * Math.cos(pitchRad); // 沿玩家背后(负偏航)的水平距离
-  const vertOffset = c.dist * Math.sin(pitchRad);    // Y 抬高
+  const horizOffset = c.dist * Math.cos(pitchRad); // 沿玩家背后(玩家面对 -Z,即 +Z 方向)
+  const vertOffset = c.dist * Math.sin(pitchRad);  // Y 抬高
+  const offsetX = horizOffset * Math.sin(yawRad);
+  const offsetZ = horizOffset * Math.cos(yawRad);
+
+  camera.position.set(offsetX, vertOffset, offsetZ);
+  camera.lookAt(0, 0.5, 0);
 
   function clampFov(v: number): number {
     return Math.max(40, Math.min(80, v));
   }
 
-  function follow(
-    playerX: number,
-    playerZ: number,
-    arenaHalf: number,
-    wallPushIn: number,
-  ): void {
-    // yaw 决定"水平偏移"绕 Y 轴旋转
-    let cx = playerX + horizOffset * Math.sin(yawRad);
-    let cz = playerZ + horizOffset * Math.cos(yawRad);
-    // 边界软拉:相机锚点不超出 arena(扣除推回余量)
-    if (cx > arenaHalf - wallPushIn) cx = arenaHalf - wallPushIn;
-    if (cx < -arenaHalf + wallPushIn) cx = -arenaHalf + wallPushIn;
-    if (cz > arenaHalf - wallPushIn) cz = arenaHalf - wallPushIn;
-    if (cz < -arenaHalf + wallPushIn) cz = -arenaHalf + wallPushIn;
-
-    camera.position.set(cx, vertOffset, cz);
-    camera.lookAt(playerX, 0.5, playerZ);
+  function follow(playerX: number, playerZ: number): void {
+    camera.position.set(playerX + offsetX, vertOffset, playerZ + offsetZ);
   }
 
   return {

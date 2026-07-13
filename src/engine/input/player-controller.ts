@@ -8,29 +8,38 @@ export interface PlayerControllerConfig {
   maxSpeed: number;
   /** 玩家 Y,锁定不动 */
   fixedY: number;
+  /** 点击寻路到达目标点的「认为到达」距离阈值(世界单位) */
+  arriveEpsilon: number;
 }
 
 export const DEFAULT_PLAYER_CONTROLLER: PlayerControllerConfig = {
   maxSpeed: 6.0,
   fixedY: 0.6,
+  arriveEpsilon: 0.3,
 };
 
 export interface PlayerControllerHandle {
   /** 每帧调用:推进玩家位置 + 朝向 */
   update(dt: number, joystick: JoystickState, player: EntityVisualHandle, arena: ArenaHandle): void;
-  /** 重置玩家(初始位置 + 朝向) */
+  /** 设置点击寻路的目标点(world x,z)。有目标时优先于摇杆 */
+  setMoveTarget(target: { x: number; z: number } | null): void;
+  /** 重置玩家(初始位置 + 朝向)。同时清空点击目标 */
   reset(player: EntityVisualHandle, arena: ArenaHandle): void;
 }
 
-/** 出生点(出生点 = (0, 0.6, -arenaHalf + 4)) */
+/** 出生点 = (0, 0.6, +arenaHalf - 4):玩家在场地 +Z 侧,面朝地图深处 -Z */
 export function defaultSpawn(arenaHalf: number): { x: number; z: number } {
-  return { x: 0, z: -arenaHalf + 4 };
+  return { x: 0, z: arenaHalf - 4 };
 }
 
 export function createPlayerController(
   cfg: Partial<PlayerControllerConfig> = {},
 ): PlayerControllerHandle {
   const c = { ...DEFAULT_PLAYER_CONTROLLER, ...cfg };
+
+  // 鼠标点击寻路的目标点(world x,z)。有目标时,优先级低于摇杆;
+  // 玩家主动拨摇杆的瞬间会清除目标。null = 无目标。
+  let moveTarget: { x: number; z: number } | null = null;
 
   function clampToArena(
     x: number,
@@ -50,31 +59,56 @@ export function createPlayerController(
     player: EntityVisualHandle,
     arena: ArenaHandle,
   ): void {
-    // 摇杆静止:位置冻结,朝向冻结(proposal §5.1 "摇杆 0 向量时冻结")
-    const speed = Math.hypot(joystick.x, joystick.y);
-    if (speed < 1e-6) {
-      return;
+    // 计算屏幕轴移动意图:
+    //   优先摇杆(玩家主动输);否则用点击目标(鼠标点击寻路);都没有则冻结姿势。
+    const joySpeed = Math.hypot(joystick.x, joystick.y);
+    let vx = 0;
+    let vz = 0;
+    let moved = false;
+
+    if (joySpeed > 1e-6) {
+      // 摇杆:屏幕轴 → 世界 XZ
+      //   joystick.x>0(屏幕右)= world +X
+      //   joystick.y<0(屏幕上)= world -Z(地图深处)
+      vx = (joystick.x / joySpeed) * c.maxSpeed;
+      vz = (joystick.y / joySpeed) * c.maxSpeed;
+      moveTarget = null;
+      moved = true;
+    } else if (moveTarget) {
+      const px = player.root.position.x;
+      const pz = player.root.position.z;
+      const dx = moveTarget.x - px;
+      const dz = moveTarget.z - pz;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= c.arriveEpsilon) {
+        moveTarget = null;
+      } else {
+        vx = (dx / dist) * c.maxSpeed;
+        vz = (dz / dist) * c.maxSpeed;
+        moved = true;
+      }
     }
-    // 速度积分,方向归一
-    // JoystickState 坐标系 = DOM 屏幕坐标系:
-    //   joystick.x > 0 = thumb 在 base 右 ⇒ 世界 +X
-    //   joystick.y < 0 = thumb 在 base 上(屏幕 y 向上) ⇒ 世界 +Z
-    // 因此 vx 直接, vz = -joystick.y 翻转屏幕 y → 世界 z
-    const vx = (joystick.x / speed) * c.maxSpeed;
-    const vz = -(joystick.y / speed) * c.maxSpeed;
+
+    if (!moved) return; // 摇杆 0 向量、没目标:位置和朝向冻结
+
     const px = player.root.position.x + vx * dt;
     const pz = player.root.position.z + vz * dt;
     const clamped = clampToArena(px, pz, arena);
     player.setPosition(clamped.x, c.fixedY, clamped.z);
-    // 朝向:atan2(vx, vz):摇杆向上(vz>0)= 0 rad,摇杆右(vx>0)= π/2 rad
+    // 朝向:atan2(vx, vz)
     player.setFacingRad(Math.atan2(vx, vz));
+  }
+
+  function setMoveTarget(target: { x: number; z: number } | null): void {
+    moveTarget = target;
   }
 
   function reset(player: EntityVisualHandle, arena: ArenaHandle): void {
     const spawn = defaultSpawn(arena.halfExtent);
     player.setPosition(spawn.x, c.fixedY, spawn.z);
-    player.setFacingRad(0); // 朝 +Z
+    player.setFacingRad(0); // 朝地图深处(-Z)
+    moveTarget = null;
   }
 
-  return { update, reset };
+  return { update, setMoveTarget, reset };
 }

@@ -32,8 +32,8 @@ export function HomePage({ onStart }: HomePageProps): JSX.Element {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#0b1024',
-        color: '#e8ecf5',
+        background: '#c8d6e5',
+        color: '#1a2230',
         fontFamily: 'system-ui, sans-serif',
       }}
     >

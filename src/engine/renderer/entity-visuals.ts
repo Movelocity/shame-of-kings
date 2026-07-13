@@ -36,7 +36,7 @@ export const DEFAULT_ENTITY_VISUAL: EntityVisualConfig = {
 
 export interface EntityVisualHandle {
   root: Group;
-  /** 0 弧度 = 朝 +Z;逆时针为正(rad) */
+  /** 0 弧度 = 朝地图深处(世界 -Z,MOBA 标配);逆时针为正(rad) */
   setFacingRad(r: number): void;
   /** 0..1 闪烁强度(被打反应) */
   setRingPulse(t: number): void;
@@ -108,6 +108,7 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
   arrow.add(shaft);
   arrow.add(head);
 
+  // 默认 forward = +Z(MOBA 标配:玩家面向地图深处 = -Z,通过下面 setFacingRad 增加 π 偏移实现)。
   const root = new Group();
   // 三棱锥本体:旋转后底部应在 y=0,中心在 y = coneHeight/2
   // 但旋转后,几何的"底部"已变为 -Z 方向,所以 y 中心 = 0,顶点朝 +Z,
@@ -121,8 +122,9 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
   root.add(arrow);
 
   function setFacingRad(r: number): void {
-    // root 整体绕 Y 轴旋转
-    root.rotation.y = r;
+    // 0 弧度对应"玩家朝地图深处" = 世界 -Z。
+    // 内部几何的 +Z 作为 forward,所以外层 root 偏移 π。
+    root.rotation.y = r + Math.PI;
   }
 
   let pulseT = 0;

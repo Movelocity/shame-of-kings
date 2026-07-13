@@ -33,9 +33,9 @@ export interface ArenaHandle {
 }
 
 const DEFAULT_OBSTACLES: ArenaObstacleSpec[] = [
-  // 出生点 → 桩之间,2 个柔化圆角障碍,玩家练绕位
-  { x: -2.5, z: 4, w: 1.5, h: 1.2, d: 1.5 },
-  { x: 2.5, z: 4, w: 1.5, h: 1.2, d: 1.5 },
+  // 出生点(+Z) → 桩(-Z 中心附近)之间,2 个柔化圆角障碍,玩家练绕位
+  { x: -2.5, z: -4, w: 1.5, h: 1.2, d: 1.5 },
+  { x: 2.5, z: -4, w: 1.5, h: 1.2, d: 1.5 },
 ];
 
 export function createArena(cfg: ArenaConfig = {}): ArenaHandle {
@@ -45,20 +45,18 @@ export function createArena(cfg: ArenaConfig = {}): ArenaHandle {
 
   const group = new Group();
 
-  // 平面(地表)
+  // 平面(地表):浅米色,和天空区分
   const floor = new Mesh(
     new PlaneGeometry(size, size),
-    new MeshStandardMaterial({ color: 0x141a2e, side: DoubleSide }),
+    new MeshStandardMaterial({ color: 0xe8e2cf, side: DoubleSide }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   group.add(floor);
 
-  // 4 面 Hard Wall —— 可见浅蓝色,实际阻挡由 §3.6.4 逻辑处理
+  // 4 面 Hard Wall —— 浅蓝灰,不透明,亮色系
   const wallMat = new MeshStandardMaterial({
-    color: 0x2c3550,
-    transparent: true,
-    opacity: 0.35,
+    color: 0x7d97b8,
     side: DoubleSide,
   });
   const wallThickness = 0.5;
@@ -96,8 +94,8 @@ export function createArena(cfg: ArenaConfig = {}): ArenaHandle {
   eWall.receiveShadow = true;
   group.add(eWall);
 
-  // 柔化圆角障碍
-  const obstacleMat = new MeshStandardMaterial({ color: 0x3a4a6b });
+  // 柔化圆角障碍:浅紫蓝,亮色
+  const obstacleMat = new MeshStandardMaterial({ color: 0xb29bd1 });
   const obstacleMeshes: Mesh[] = [];
   for (const spec of specs) {
     const geom = new RoundedBoxGeometry(spec.w, spec.h, spec.d, 4, 0.3);

@@ -22,18 +22,25 @@ export interface GameSceneHandle {
   lights: GameLightsHandle;
   arena: ArenaHandle;
   player: EntityVisualHandle;
+  dummy: EntityVisualHandle;
   controller: PlayerControllerHandle;
   /** 每帧调用:由外部喂入摇杆状态 */
   update(dt: number, joystick: JoystickState): void;
+  /** 重置玩家回出生点 */
+  reset(): void;
   dispose(): void;
 }
 
 const PLAYER_Y = 0.6; // §3.6.4 锁定位置 y=0.6
 const FOV_DEFAULT = 60;
 
+// 桩位置 = 场地中央偏 -Z(地图深处),玩家从 +Z 出生面向 -Z 恰好面对桩
+const DUMMY_POSITION: { x: number; z: number } = { x: 0, z: 0 };
+
 export function createGameScene(cfg: GameSceneConfig): GameSceneHandle {
   const scene = new Scene();
-  scene.background = new Color(0x0b1024);
+  // 亮色调:浅天空蓝灰;地面和墙配套换浅色
+  scene.background = new Color(0xc8d6e5);
 
   const follow = createFollowCamera({
     aspect: cfg.width / cfg.height,
@@ -46,11 +53,26 @@ export function createGameScene(cfg: GameSceneConfig): GameSceneHandle {
   const arena = createArena();
   scene.add(arena.group);
 
-  const spawn = cfg.playerStart ?? { x: 0, z: -arena.halfExtent + 4 };
-  const player = createEntityVisual({});
+  const spawn = cfg.playerStart ?? { x: 0, z: arena.halfExtent - 4 };
+  const player = createEntityVisual({
+    // 玩家:鲜明蓝锥
+    coneColor: 0x3b78ff,
+    ringColor: 0x3b78ff,
+    arrowColor: 0xffd84a,
+  });
   player.setPosition(spawn.x, PLAYER_Y, spawn.z);
-  player.setFacingRad(0); // 朝 +Z(面对桩)
+  player.setFacingRad(0); // 朝地图深处(-Z,面对桩)
   scene.add(player.root);
+
+  // 木人桩:橘红锥体(亮色,与玩家蓝清晰区分)
+  const dummy = createEntityVisual({
+    coneColor: 0xff6a3d,
+    ringColor: 0xff6a3d,
+    arrowColor: 0xffffff,
+  });
+  dummy.setPosition(DUMMY_POSITION.x, PLAYER_Y, DUMMY_POSITION.z);
+  dummy.setFacingRad(0);
+  scene.add(dummy.root);
 
   const controller = createPlayerController({});
 
@@ -59,9 +81,11 @@ export function createGameScene(cfg: GameSceneConfig): GameSceneHandle {
     follow.follow(
       player.root.position.x,
       player.root.position.z,
-      arena.halfExtent,
-      2.5,
     );
+  }
+
+  function reset(): void {
+    controller.reset(player, arena);
   }
 
   function dispose(): void {
@@ -69,7 +93,8 @@ export function createGameScene(cfg: GameSceneConfig): GameSceneHandle {
     lights.dispose();
     arena.dispose();
     player.dispose();
+    dummy.dispose();
   }
 
-  return { scene, follow, lights, arena, player, controller, update, dispose };
+  return { scene, follow, lights, arena, player, dummy, controller, update, reset, dispose };
 }

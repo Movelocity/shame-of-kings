@@ -140,6 +140,7 @@ export function Joystick({
   }, [baseRadius, onChange]);
 
   // 视觉 base: 大圆 + 中心点;thumb: 内部小圆,默认居中
+  // 亮色调:底圈半透深蓝灰避免吃掉地面色;thumb 用鲜明的金色保持可视化
   const containerStyle: CSSProperties = {
     position: 'fixed',
     left: anchor.left,
@@ -147,8 +148,8 @@ export function Joystick({
     width: baseRadius * 2,
     height: baseRadius * 2,
     borderRadius: '50%',
-    background: 'rgba(20, 26, 46, 0.45)',
-    border: '2px solid rgba(255, 255, 255, 0.18)',
+    background: 'rgba(61, 84, 124, 0.32)',
+    border: '2px solid rgba(34, 48, 78, 0.55)',
     touchAction: 'none',
     userSelect: 'none',
     zIndex: 10,
@@ -161,8 +162,8 @@ export function Joystick({
     width: thumbRadius * 2,
     height: thumbRadius * 2,
     borderRadius: '50%',
-    background: 'rgba(255, 216, 74, 0.65)',
-    border: '1px solid rgba(255, 255, 255, 0.4)',
+    background: 'rgba(255, 216, 74, 0.85)',
+    border: '1px solid rgba(34, 48, 78, 0.6)',
     willChange: 'transform',
   };
 
