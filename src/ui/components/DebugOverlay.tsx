@@ -32,6 +32,8 @@ export function DebugOverlay({ sceneRef }: DebugOverlayProps): JSX.Element | nul
   const scene = sceneRef.current;
   const player = scene?.player?.root?.position;
   const dummy = scene?.dummy?.root?.position;
+  const cam = scene?.follow.camera;
+  const camOffset = scene?.follow.getCameraOffset();
 
   return (
     <div
@@ -53,8 +55,9 @@ export function DebugOverlay({ sceneRef }: DebugOverlayProps): JSX.Element | nul
       <div>FPS: {fps.current.toFixed(0)}</div>
       {player && (
         <>
+          <div style={{ marginTop: 4, fontWeight: 700 }}>player</div>
           <div>
-            player: ({player.x.toFixed(2)}, {player.z.toFixed(2)})
+            x: {player.x.toFixed(2)}  z: {player.z.toFixed(2)}
           </div>
           <div>
             facing: {(((scene?.player.root.rotation.y ?? 0) * 180) / Math.PI - 180) | 0}°
@@ -63,8 +66,23 @@ export function DebugOverlay({ sceneRef }: DebugOverlayProps): JSX.Element | nul
       )}
       {dummy && (
         <div>
-          dummy: ({dummy.x.toFixed(2)}, {dummy.z.toFixed(2)})
+          dummy x: {dummy.x.toFixed(2)}  z: {dummy.z.toFixed(2)}
         </div>
+      )}
+      {cam && (
+        <>
+          <div style={{ marginTop: 4, fontWeight: 700 }}>camera</div>
+          <div>
+            x: {cam.position.x.toFixed(2)}  z: {cam.position.z.toFixed(2)}
+          </div>
+        </>
+      )}
+      {camOffset && (
+        <>
+          <div>
+            offset x: {camOffset.x.toFixed(2)}  z: {camOffset.z.toFixed(2)}
+          </div>
+        </>
       )}
     </div>
   );

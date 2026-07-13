@@ -164,12 +164,12 @@ export function MobileControls({
       const cam = camActiveRef.current;
       if (cam && cam.pointerId === e.pointerId) {
         e.preventDefault();
-        // 拖动方向:世界随手指移动 → 相机偏移 = -dragDelta * sens
+        // 相机跟随手指:dragDelta * sens 直接叠加到相机位置
         const dx = e.clientX - cam.startX;
         const dy = e.clientY - cam.startY;
         setCameraOffset(
-          clamp(-dx * dragSensitivity, maxOffset),
-          clamp(-dy * dragSensitivity, maxOffset),
+          clamp(dx * dragSensitivity, maxOffset),
+          clamp(dy * dragSensitivity, maxOffset),
         );
       }
     }

@@ -32,6 +32,8 @@ export interface FollowCameraHandle {
    * 用于右侧拖动相机观察周围;松开归零即可「snap 回玩家相对位置」。
    */
   setCameraOffset(offsetX: number, offsetZ: number): void;
+  /** 读取当前临时相机偏移(用于 DebugOverlay 等调试面板) */
+  getCameraOffset(): { x: number; z: number };
   /** 双指缩放:改变 FOV(40-80) */
   setFov(fov: number): void;
   /** 处理窗口 resize */
@@ -79,6 +81,9 @@ export function createFollowCamera(cfg: Partial<FollowCameraConfig> = {}): Follo
     setCameraOffset(x: number, z: number) {
       dragOffsetX = x;
       dragOffsetZ = z;
+    },
+    getCameraOffset() {
+      return { x: dragOffsetX, z: dragOffsetZ };
     },
     setFov(v: number) {
       camera.fov = clampFov(v);
