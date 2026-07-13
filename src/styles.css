@@ -1,0 +1,15 @@
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #0b1024;
+  color: #e8ecf5;
+  font-family: system-ui, -apple-system, sans-serif;
+  overscroll-behavior: none;
+}
+* {
+  box-sizing: border-box;
+}

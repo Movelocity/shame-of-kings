@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# pnpm
+.pnpm-store/
+
+# Build / TypeScript 增量编译文件
+node_modules/.tmp/
+*.tsbuildinfo
+
+# 测试产物
+coverage/
+.vitest-cache/
+
+# 项目内 IDE 状态 / 临时
+.eslintcache
+.oxlintrc.local
+
+# MiMoCode 工作区元数据(用户与编辑器栈,不入仓)
+.mimocode/
