@@ -126,10 +126,11 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
       emissiveIntensity: 0.35,
     });
     const tri = new Mesh(triangleGeom, indicatorMat);
-    // Shape 在 XY 平面,Extrude 沿 +Z。绕 X 转 -π/2 让三角形平躺到 XZ 地面,
-    // 深度方向(原 +Z)翻到 +Y → 落在 y∈[0, 0.06] 的薄层。
-    tri.rotation.x = -Math.PI / 2;
-    // 三角形位在圆环外圈略外(在玩家面向方向,即 +Z 一侧)。
+    // Shape 在 XY 平面,尖端朝 +Y(顶点)。绕 X 转 +π/2 把尖端翻到 +Z,
+    // 整三角形平躺在 XZ 地面、尖端落在 player 正前方(玩家面向方向,+Z 一侧)。
+    // 这是 "远指" 形态:玩家看向地图深处时,箭头从近端指向远方。
+    tri.rotation.x = Math.PI / 2;
+    // 三角形位在圆环外圈略外。
     const rOffset = c.ringOuter + s * 0.55;
     tri.position.set(0, 0.02, rOffset);
     indicator.add(tri);
@@ -161,12 +162,17 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
   root.add(indicator);
 
   function setFacingRad(r: number): void {
-    // 约定:r = 0 表示"朝地图深处" = 世界 -Z。
-    // standing 时三棱锥是上下对称的,只有 indicator(三角形)承担朝向含义,
-    // 因此让 indicator 单独绕 Y 转 (-r - π):把"尖端朝 +Z"映射到"尖端朝 -Z"。
-    // facing 时整个 root 旋转 r + π 以兼容旧行为。
+    // 约定:player forward = world -Z, r = 0 表示"玩家朝地图深处(-Z)"。
+    // standing 时三棱锥是上下对称的,只有 indicator(三角形)承担朝向含义。
+    // 三角形几何原始(零旋转时)尖端朝 +Z,主体在 +Z 一侧(player 面前)。
+    // 通过 indicator.rotation.y = π - r 把"+Z"翻到"玩家前进方向":
+    //   A(vx<0,vz=0):r=-π/2, θ=3π/2≡-π/2 → +Z → -X(player 朝 -X = 左)
+    //   D(vx>0,vz=0):r=+π/2, θ=+π/2 → +Z → +X(player 右)
+    //   W(vx=0,vz<0):r=0,    θ=+π    → +Z → -Z(player 前方)
+    //   S(vx=0,vz>0):r=π,    θ=0      → +Z stays +Z(player 回退方向)
+    // facing legacy(箭头几何在 +Z)整体旋转 r + π,语义同上、自洽。
     if (c.orientation === 'standing') {
-      indicator.rotation.y = -r - Math.PI;
+      indicator.rotation.y = Math.PI - r;
       root.rotation.y = 0;
     } else {
       root.rotation.y = r + Math.PI;

@@ -95,8 +95,13 @@ export function createPlayerController(
     const pz = player.root.position.z + vz * dt;
     const clamped = clampToArena(px, pz, arena);
     player.setPosition(clamped.x, c.fixedY, clamped.z);
-    // 朝向:atan2(vx, vz)
-    player.setFacingRad(Math.atan2(vx, vz));
+    // 朝向:让 r = 0 ≡ 玩家朝 world -Z(地图深处,默认 spawn 朝向)。
+    //   vx, vz 是世界坐标速度分量。
+    //   Math.atan2(vx, -vz) 让 (vx=0,vz=-1)=0、(vx=0,vz=+1)=π、
+    //   (vx>0,vz=0)=+π/2(逆时针 +X, 屏幕右)、(vx<0,vz=0)=-π/2(逆时针 -X, 屏幕左)。
+    // entity-visuals.setFacingRad 用这个 r 配合 indicator.rotation.y = π - r 把三角形
+    // 几何尖端转到玩家前进方向。
+    player.setFacingRad(Math.atan2(vx, -vz));
   }
 
   function setMoveTarget(target: { x: number; z: number } | null): void {
