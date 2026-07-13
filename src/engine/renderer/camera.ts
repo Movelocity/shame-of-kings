@@ -27,6 +27,11 @@ export interface FollowCameraHandle {
   camera: PerspectiveCamera;
   /** 跟随玩家位置；相机与玩家的世界空间偏移、pitch、yaw 始终不变 */
   follow(playerX: number, playerZ: number): void;
+  /**
+   * 设置临时相机偏移(世界 XZ,叠加在玩家相对位置之上)。
+   * 用于右侧拖动相机观察周围;松开归零即可「snap 回玩家相对位置」。
+   */
+  setCameraOffset(offsetX: number, offsetZ: number): void;
   /** 双指缩放:改变 FOV(40-80) */
   setFov(fov: number): void;
   /** 处理窗口 resize */
@@ -52,17 +57,29 @@ export function createFollowCamera(cfg: Partial<FollowCameraConfig> = {}): Follo
   camera.position.set(offsetX, vertOffset, offsetZ);
   camera.lookAt(0, 0.5, 0);
 
+  // 临时相机偏移(右侧拖动相机用)。xz,叠加在玩家相对位置上;松开时归零即 snap 回玩家。
+  let dragOffsetX = 0;
+  let dragOffsetZ = 0;
+
   function clampFov(v: number): number {
     return Math.max(40, Math.min(80, v));
   }
 
   function follow(playerX: number, playerZ: number): void {
-    camera.position.set(playerX + offsetX, vertOffset, playerZ + offsetZ);
+    camera.position.set(
+      playerX + offsetX + dragOffsetX,
+      vertOffset,
+      playerZ + offsetZ + dragOffsetZ,
+    );
   }
 
   return {
     camera,
     follow,
+    setCameraOffset(x: number, z: number) {
+      dragOffsetX = x;
+      dragOffsetZ = z;
+    },
     setFov(v: number) {
       camera.fov = clampFov(v);
       camera.updateProjectionMatrix();

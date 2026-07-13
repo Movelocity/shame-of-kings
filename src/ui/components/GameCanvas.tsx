@@ -10,7 +10,7 @@ import { createFixedLoop } from '../../engine/loop/gameLoop';
 import { ZERO_JOYSTICK, type JoystickState } from '../../engine/input/joystick';
 import { createKeyboardMove } from '../../engine/input/keyboard-move';
 import { isMobileUA } from '../../platform/isMobileUA';
-import { Joystick } from './Joystick';
+import { MobileControls } from './MobileControls';
 
 interface GameCanvasProps {
   /** 调试 UI(DebugOverlay)需要观察 scene。dev-only,生产 build 不渲染。 */
@@ -24,9 +24,13 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
   const joyRef = useRef<JoystickState>(ZERO_JOYSTICK);
   const isMobile = useRef<boolean>(false);
 
-  const handleJoystickChange = useCallback((s: JoystickState) => {
-    joyRef.current = s;
-  }, []);
+  const handleSetCameraOffset = useCallback(
+    (x: number, z: number) => {
+      const scene = sceneRef.current;
+      scene?.follow.setCameraOffset(x, z);
+    },
+    [sceneRef],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -123,7 +127,12 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
           cursor: mobile ? 'default' : 'crosshair',
         }}
       />
-      {mobile && <Joystick onChange={handleJoystickChange} />}
+      {mobile && (
+        <MobileControls
+          joystickRef={joyRef}
+          setCameraOffset={handleSetCameraOffset}
+        />
+      )}
     </>
   );
 }

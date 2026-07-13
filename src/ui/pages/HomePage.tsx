@@ -38,7 +38,7 @@ export function HomePage({ onStart }: HomePageProps): JSX.Element {
       }}
     >
       <h1 style={{ margin: 0, fontSize: 36 }}>Web MOBA</h1>
-      <p style={{ opacity: 0.7, marginTop: 8 }}>亚瑟 · 手法练习场</p>
+      <p style={{ opacity: 0.7, marginTop: 8 }}>练习场</p>
       <button
         type="button"
         onClick={handleStart}
