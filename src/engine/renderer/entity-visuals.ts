@@ -3,15 +3,26 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
+  ExtrudeGeometry,
   Group,
   Mesh,
   MeshStandardMaterial,
   RingGeometry,
+  Shape,
 } from 'three';
+
+export type EntityOrientation = 'standing' | 'facing';
 
 export interface EntityVisualConfig {
   // 几何
   radius: number;
+  /** 直立三棱锥的"高度比例"(相对于底面):height = radius * heightRatio */
+  heightRatio: number;
+  /** 朝向指示器形状 */
+  indicator: 'triangle' | 'arrow';
+  /** 三角形边长(世界单位) */
+  triangleSize: number;
+  /** 旧:箭头长度(仅 indicator=arrow 时生效,保留兼容) */
   arrowLength: number;
   // 光圈
   ringInner: number;
@@ -21,17 +32,26 @@ export interface EntityVisualConfig {
   coneColor: number;
   ringColor: number;
   arrowColor: number;
+  /** 三角指示器颜色(默认沿用 arrowColor) */
+  triangleColor: number;
+  /** 三棱锥姿态:standing=贴地顶点朝上;facing=侧躺指 +Z(legacy) */
+  orientation: EntityOrientation;
 }
 
 export const DEFAULT_ENTITY_VISUAL: EntityVisualConfig = {
-  radius: 0.4,
-  arrowLength: 1.3,
-  ringInner: 0.45,
-  ringOuter: 0.55,
+  radius: 0.5,
+  heightRatio: 1.5,
+  indicator: 'triangle',
+  triangleSize: 0.45,
+  arrowLength: 1.3, // legacy,indicator=arrow 时才用
+  ringInner: 0.6,
+  ringOuter: 0.72,
   ringAlpha: 0.45,
   coneColor: 0x3b78ff,
   ringColor: 0x3b78ff,
   arrowColor: 0xffd84a,
+  triangleColor: 0xffd84a,
+  orientation: 'standing',
 };
 
 export interface EntityVisualHandle {
@@ -48,9 +68,9 @@ export interface EntityVisualHandle {
 export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): EntityVisualHandle {
   const c = { ...DEFAULT_ENTITY_VISUAL, ...cfg };
 
-  // 三棱锥 —— CylinderGeometry 顶圆=0 + radialSegments=3 得三棱锥
-  // height = 3 * radius 即 直径的 1.5 倍
-  const coneHeight = 3 * c.radius;
+  // 锥高 = 底面半径 * 比例。standing 时垂直立在地上(顶点朝 +Y);
+  // facing 时躺下指向 +Z(legacy)。
+  const coneHeight = c.radius * c.heightRatio;
   const coneGeom = new CylinderGeometry(0, c.radius, coneHeight, 3);
   const coneMat = new MeshStandardMaterial({
     color: c.coneColor,
@@ -58,19 +78,16 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
     emissiveIntensity: 0.05,
   });
   const cone = new Mesh(coneGeom, coneMat);
-  // 顶点对应实体正方向(玩家朝 +Z,顶点默认朝 +Y)
-  // 旋转:让顶点朝 +Z:绕 X 转 -90°,但是 Three.js CylinderGeometry 顶点是 +Y
-  // 需要的姿态:三棱锥立在地上,顶点(原 +Y)转为朝向 +Z
-  // (a) 让它躺下:绕 X 转 -π/2 让高度方向对齐 +Y→-Z
-  // 想要顶点朝 +Z,转 +π/2 让 +Y → +Z
-  cone.rotation.x = Math.PI / 2;
-  // 经过 π/2 旋转,中心 (0,0,0) 不变,顶点 (+Z 半 height 处)
-  // 为了让底部接在 y=0,锥几何中心偏离;再下移 coneHeight/2
-  // rotation 后局部坐标变化 → 直接把 group 定位 y=0 即可
+  if (c.orientation === 'facing') {
+    cone.rotation.x = Math.PI / 2; // 顶点指向 +Z
+  } else {
+    // standing:顶点朝 +Y,几何中心在 y=0。把锥上移半高,让底部贴地。
+    cone.position.y = coneHeight / 2;
+  }
   cone.castShadow = true;
   cone.receiveShadow = true;
 
-  // 光圈
+  // 地面圆环(贴地,中心略抬 0.01 防 z-fight)
   const ringGeom = new RingGeometry(c.ringInner, c.ringOuter, 32);
   const ringMat = new MeshStandardMaterial({
     color: c.ringColor,
@@ -84,56 +101,85 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.01;
 
-  // 箭头:柱身 + 圆锥头
-  const shaftLen = c.arrowLength - 0.3;
-  const shaftGeom = new CylinderGeometry(0.08, 0.08, shaftLen, 8);
-  const arrowMat = new MeshStandardMaterial({
-    color: c.arrowColor,
-    emissive: c.arrowColor,
-    emissiveIntensity: 0.2,
-  });
-  const shaft = new Mesh(shaftGeom, arrowMat);
-  // 柱身定位:从三棱锥出发沿 +Z 方向伸出 shaftLen/2
-  shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = shaftLen / 2 + 0.2;
-  shaft.castShadow = true;
+  // 朝向指示器:独立的 Group。standing 时它承担朝向含义(随玩家转向转 indicator);
+  // facing legacy 时它作为附加箭头指示。
+  const indicator = new Group();
+  let shaftGeom: CylinderGeometry | undefined;
+  let headGeom: ConeGeometry | undefined;
+  let triangleGeom: import('three').ExtrudeGeometry | undefined;
+  let indicatorMat!: MeshStandardMaterial;
+  if (c.indicator === 'triangle') {
+    const s = c.triangleSize;
+    const shape = new Shape();
+    // 等边三角形,质心在原点,尖端朝 +Z。
+    shape.moveTo(0, (2 / 3) * (s * Math.sqrt(3) / 2));
+    shape.lineTo(s / 2, -(1 / 3) * (s * Math.sqrt(3) / 2));
+    shape.lineTo(-s / 2, -(1 / 3) * (s * Math.sqrt(3) / 2));
+    shape.closePath();
+    triangleGeom = new ExtrudeGeometry(shape, {
+      depth: 0.06,
+      bevelEnabled: false,
+    });
+    indicatorMat = new MeshStandardMaterial({
+      color: c.triangleColor,
+      emissive: c.triangleColor,
+      emissiveIntensity: 0.35,
+    });
+    const tri = new Mesh(triangleGeom, indicatorMat);
+    // Shape 在 XY 平面,Extrude 沿 +Z。绕 X 转 -π/2 让三角形平躺到 XZ 地面,
+    // 深度方向(原 +Z)翻到 +Y → 落在 y∈[0, 0.06] 的薄层。
+    tri.rotation.x = -Math.PI / 2;
+    // 三角形位在圆环外圈略外(在玩家面向方向,即 +Z 一侧)。
+    const rOffset = c.ringOuter + s * 0.55;
+    tri.position.set(0, 0.02, rOffset);
+    indicator.add(tri);
+  } else {
+    // legacy:箭头 = 圆柱身 + 圆锥头
+    const shaftLen = c.arrowLength - 0.3;
+    shaftGeom = new CylinderGeometry(0.08, 0.08, shaftLen, 8);
+    headGeom = new ConeGeometry(0.18, 0.3, 8);
+    indicatorMat = new MeshStandardMaterial({
+      color: c.arrowColor,
+      emissive: c.arrowColor,
+      emissiveIntensity: 0.2,
+    });
+    const shaft = new Mesh(shaftGeom, indicatorMat);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.z = shaftLen / 2 + 0.2;
+    shaft.castShadow = true;
+    const head = new Mesh(headGeom, indicatorMat);
+    head.rotation.x = Math.PI / 2;
+    head.position.z = shaftLen + 0.2 + 0.15;
+    head.castShadow = true;
+    indicator.add(shaft);
+    indicator.add(head);
+  }
 
-  const headGeom = new ConeGeometry(0.18, 0.3, 8);
-  const head = new Mesh(headGeom, arrowMat);
-  head.rotation.x = Math.PI / 2;
-  head.position.z = shaftLen + 0.2 + 0.15;
-  head.castShadow = true;
-
-  const arrow = new Group();
-  arrow.add(shaft);
-  arrow.add(head);
-
-  // 默认 forward = +Z(MOBA 标配:玩家面向地图深处 = -Z,通过下面 setFacingRad 增加 π 偏移实现)。
   const root = new Group();
-  // 三棱锥本体:旋转后底部应在 y=0,中心在 y = coneHeight/2
-  // 但旋转后,几何的"底部"已变为 -Z 方向,所以 y 中心 = 0,顶点朝 +Z,
-  // **这里我把 cone 的中心放回 y=0**(因为是程序上放置,不需要"立在地上")
-  // 实际玩家三棱锥脚下要贴地:让锥的最薄端贴近 y=0,最厚端朝 +Z (forward)
-  // 已通过 rotation.x = π/2 让顶点指向 +Z;中心位于原点。
-  // 玩家的 y 由调用者 setPosition 设;三棱锥根部 y 应贴地
-  cone.position.y = 0; // 不再下移;调用者保证 setPos.y = 0
   root.add(cone);
   root.add(ring);
-  root.add(arrow);
+  root.add(indicator);
 
   function setFacingRad(r: number): void {
-    // 0 弧度对应"玩家朝地图深处" = 世界 -Z。
-    // 内部几何的 +Z 作为 forward,所以外层 root 偏移 π。
-    root.rotation.y = r + Math.PI;
+    // 约定:r = 0 表示"朝地图深处" = 世界 -Z。
+    // standing 时三棱锥是上下对称的,只有 indicator(三角形)承担朝向含义,
+    // 因此让 indicator 单独绕 Y 转 (-r - π):把"尖端朝 +Z"映射到"尖端朝 -Z"。
+    // facing 时整个 root 旋转 r + π 以兼容旧行为。
+    if (c.orientation === 'standing') {
+      indicator.rotation.y = -r - Math.PI;
+      root.rotation.y = 0;
+    } else {
+      root.rotation.y = r + Math.PI;
+    }
   }
 
   let pulseT = 0;
   function setRingPulse(t: number): void {
     pulseT = Math.max(0, Math.min(1, t));
-    // 应用闪烁:ringMat 的 emissiveIntensity 临时增加
     ringMat.emissiveIntensity = 0.6 + pulseT * 0.8;
     ringMat.opacity = c.ringAlpha + pulseT * 0.5;
     coneMat.emissiveIntensity = 0.05 + pulseT * 0.4;
+    indicatorMat.emissiveIntensity = 0.35 + pulseT * 0.4;
   }
 
   function setPosition(x: number, y: number, z: number): void {
@@ -141,10 +187,12 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
   }
 
   function dispose(): void {
-    [coneGeom, ringGeom, shaftGeom, headGeom].forEach((g) => g.dispose());
+    [coneGeom, ringGeom, shaftGeom, headGeom, triangleGeom].forEach((g) =>
+      g?.dispose(),
+    );
     coneMat.dispose();
     ringMat.dispose();
-    arrowMat.dispose();
+    indicatorMat.dispose();
   }
 
   return { root, setFacingRad, setRingPulse, setPosition, dispose };

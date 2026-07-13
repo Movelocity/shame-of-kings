@@ -14,7 +14,7 @@ export interface PlayerControllerConfig {
 
 export const DEFAULT_PLAYER_CONTROLLER: PlayerControllerConfig = {
   maxSpeed: 6.0,
-  fixedY: 0.6,
+  fixedY: 0, // 三棱锥贴地,玩家 y 锁为 0
   arriveEpsilon: 0.3,
 };
 
@@ -27,7 +27,7 @@ export interface PlayerControllerHandle {
   reset(player: EntityVisualHandle, arena: ArenaHandle): void;
 }
 
-/** 出生点 = (0, 0.6, +arenaHalf - 4):玩家在场地 +Z 侧,面朝地图深处 -Z */
+/** 出生点 = (0, 0, +arenaHalf - 4):玩家在场地 +Z 侧,面朝地图深处 -Z */
 export function defaultSpawn(arenaHalf: number): { x: number; z: number } {
   return { x: 0, z: arenaHalf - 4 };
 }

@@ -31,7 +31,7 @@ export interface GameSceneHandle {
   dispose(): void;
 }
 
-const PLAYER_Y = 0.6; // §3.6.4 锁定位置 y=0.6
+const PLAYER_Y = 0; // 玩家和敌人都贴地:锥底部 y=0,与场地平齐
 const FOV_DEFAULT = 60;
 
 // 桩位置 = 场地中央偏 -Z(地图深处),玩家从 +Z 出生面向 -Z 恰好面对桩
@@ -58,17 +58,17 @@ export function createGameScene(cfg: GameSceneConfig): GameSceneHandle {
     // 玩家:鲜明蓝锥
     coneColor: 0x3b78ff,
     ringColor: 0x3b78ff,
-    arrowColor: 0xffd84a,
+    triangleColor: 0xffd84a,
   });
   player.setPosition(spawn.x, PLAYER_Y, spawn.z);
   player.setFacingRad(0); // 朝地图深处(-Z,面对桩)
   scene.add(player.root);
 
-  // 木人桩:橘红锥体(亮色,与玩家蓝清晰区分)
+  // 木人桩:橘红锥体(亮色,与玩家蓝清晰区分),与玩家共用一套视觉模型
   const dummy = createEntityVisual({
     coneColor: 0xff6a3d,
     ringColor: 0xff6a3d,
-    arrowColor: 0xffffff,
+    triangleColor: 0xffffff,
   });
   dummy.setPosition(DUMMY_POSITION.x, PLAYER_Y, DUMMY_POSITION.z);
   dummy.setFacingRad(0);

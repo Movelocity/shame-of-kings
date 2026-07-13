@@ -17,7 +17,7 @@ export const DEFAULT_FOLLOW_CAMERA: FollowCameraConfig = {
   fov: 60,
   pitchDeg: 65,
   yawDeg: 0,
-  dist: 22,
+  dist: 12,
   aspect: typeof window !== 'undefined' ? window.innerWidth / window.innerHeight : 16 / 9,
   near: 0.1,
   far: 200,
