@@ -9,6 +9,7 @@
 //    视野外(草丛/墙后)目标不可被命中
 //  - SkillInstance 可中断(被 reset / 被打断技能时清空):M2 T2.1 实现状态机时落实
 
+import type { BuffBag } from '../buffs/buff-bag';
 import type { Vec2 } from './vec2';
 
 /** 命中盒类型(proposal §5.2 锁的最小集合) */
@@ -89,6 +90,11 @@ export interface SkillContext {
   world: WorldLike;
   /** 帧号或 world tick,毫秒;P2 起用于塔的 attackInterval */
   now: number;
+  /**
+   * 施法者 Buff 袋(T35.1+)。缺省 = 无加成 / onActivate 无挂点。
+   * 由 GameCanvas(或测试)喂入同一份 createBuffBag()。
+   */
+  buffs?: BuffBag;
 }
 
 /** World 抽象(避免 skills/ 反向依赖 world/ 的具体类)。
@@ -125,6 +131,11 @@ export interface Skill {
   readonly castMode: 'instant' | 'targeted';
   /** 伤害公式;undefined = 无伤害(如纯位移) */
   readonly damage?: DamageFormula;
+  /**
+   * 进入 active 阶段时回调一次(T35.2:契约之盾挂移速/下次普攻 buff)。
+   * 纯位移 / 无效果技能可缺省。
+   */
+  readonly onActivate?: (ctx: SkillContext) => void;
 }
 
 /** 技能运行实例(由 Skill.onCast 返回,M2 T2.1 落实) */

@@ -71,7 +71,7 @@
       "id": "auto-attack",
       "name": "Auto Attack",
       "hotkey": "0",
-      "hit": { "kind": "rect", "halfWidth": 0.8, "halfDepth": 1.2 },
+      "hit": { "kind": "rect", "halfWidth": 0.8, "halfDepth": 2.2 },
       "displacement": "none",
       "castTime": 0.0,
       "activeTime": 0.1,
@@ -79,7 +79,9 @@
       "cooldown": 0.55,
       "castMode": "instant",
       "effect": {
-        "damage": 130
+        "damage": 130,
+        "attackRange": 2.0,
+        "acquireRange": 8.0
       }
     }
   ]

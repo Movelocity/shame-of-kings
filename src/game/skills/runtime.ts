@@ -70,6 +70,8 @@ export function startSkill(
         if (skill.displacement === 'dash' && skill.dashDistance > 0) {
           applyDash(caster, inst.origin, forward, skill.dashDistance);
         }
+        // T35.2:进入 active 时回调一次(契约之盾等挂 buff)
+        skill.onActivate?.(ctx);
       }
       if (inst.phase === 'active') {
         const hits = resolveHits(ctx.world as WorldLike, caster, skill.hit, forward);
@@ -135,7 +137,7 @@ export function applyDamage(units: Iterable<Unit>, results: readonly DamageResul
   }
 }
 
-/** 工厂:辅助方法,提供给 debug-skills 用 */
+/** 工厂:辅助方法,提供给 debug-skills / 亚瑟装载用 */
 export function makeSkill(partial: {
   id: string;
   displayName: string;
@@ -149,6 +151,7 @@ export function makeSkill(partial: {
   damage?: Skill['damage'];
   /** 缺省 'instant',兼容 M3 现有 4 技能与 debug-skills */
   castMode?: Skill['castMode'];
+  onActivate?: Skill['onActivate'];
 }): Skill {
   return {
     id: partial.id,
@@ -162,5 +165,6 @@ export function makeSkill(partial: {
     dashDistance: partial.dashDistance ?? 0,
     damage: partial.damage,
     castMode: partial.castMode ?? 'instant',
+    onActivate: partial.onActivate,
   };
 }

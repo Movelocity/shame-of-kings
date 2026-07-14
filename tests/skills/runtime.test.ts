@@ -298,3 +298,31 @@ describe('castMode 默认值', () => {
     expect(skill.castMode).toBe('targeted');
   });
 });
+
+describe('onActivate', () => {
+  it('进入 active 时回调一次,后续 active tick 不再调', () => {
+    const caster = mkUnit('caster', 0, 0);
+    const world = mkWorld([caster]);
+    let calls = 0;
+    const skill = makeSkill({
+      id: 'buff-skill',
+      displayName: 'Buff',
+      hit: { kind: 'self' },
+      castTime: 0.1,
+      activeTime: 0.2,
+      recoveryTime: 0.1,
+      cooldown: 1.0,
+      onActivate() {
+        calls += 1;
+      },
+    });
+    const inst = startSkill(skill, caster, { forwardRad: 0 });
+    inst.tick(0.05, mkCtx(caster, world));
+    expect(calls).toBe(0);
+    inst.tick(0.05, mkCtx(caster, world));
+    expect(inst.phase).toBe('active');
+    expect(calls).toBe(1);
+    inst.tick(0.1, mkCtx(caster, world));
+    expect(calls).toBe(1);
+  });
+});

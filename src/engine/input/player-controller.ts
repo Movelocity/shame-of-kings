@@ -15,7 +15,8 @@ export interface PlayerControllerConfig {
 export const DEFAULT_PLAYER_CONTROLLER: PlayerControllerConfig = {
   maxSpeed: 6.0,
   fixedY: 0, // 三棱锥贴地,玩家 y 锁为 0
-  arriveEpsilon: 0.3,
+  // 单位间无碰撞:可走到目标中心附近(普攻追击可重合);过小会在终点微抖
+  arriveEpsilon: 0.05,
 };
 
 export interface PlayerControllerHandle {
@@ -25,6 +26,16 @@ export interface PlayerControllerHandle {
   setMoveTarget(target: { x: number; z: number } | null): void;
   /** 重置玩家(初始位置 + 朝向)。同时清空点击目标 */
   reset(player: EntityVisualHandle, arena: ArenaHandle): void;
+  /**
+   * T35.2:移速倍率(契约之盾等)。有效速度 = maxSpeed * multiplier。
+   * 缺省 1;reset 不改倍率(由上层 BuffBag.clear 后写回 1)。
+   */
+  setSpeedMultiplier(multiplier: number): void;
+  /**
+   * 普攻锁敌:静止追击到位后仍要对准目标(update 无移动时不会改朝向)。
+   * 只写内部 facing;视觉锥由 caller 同步 player.setFacingRad。
+   */
+  setFacingRad(rad: number): void;
   /**
    * 当前朝向(世界 -Z = 0,逆时针为正)。KI-3:为元歌/镜的指向性技能 forwardRad 提供
    * 实时读数,只读 getter,不影响现有 update/reset/setMoveTarget 三个写接口。
@@ -48,6 +59,8 @@ export function createPlayerController(
   let moveTarget: { x: number; z: number } | null = null;
   // 当前朝向(世界 -Z = 0)。KI-3:为指向性技能 forwardRad 提供 getter。
   let _facingRad = 0;
+  // T35.2:Buff 移速倍率(1 = 无加成)
+  let speedMultiplier = 1;
 
   function clampToArena(
     x: number,
@@ -74,12 +87,13 @@ export function createPlayerController(
     let vz = 0;
     let moved = false;
 
+    const speed = c.maxSpeed * speedMultiplier;
     if (joySpeed > 1e-6) {
       // 摇杆:屏幕轴 → 世界 XZ
       //   joystick.x>0(屏幕右)= world +X
       //   joystick.y<0(屏幕上)= world -Z(地图深处)
-      vx = (joystick.x / joySpeed) * c.maxSpeed;
-      vz = (joystick.y / joySpeed) * c.maxSpeed;
+      vx = (joystick.x / joySpeed) * speed;
+      vz = (joystick.y / joySpeed) * speed;
       moveTarget = null;
       moved = true;
     } else if (moveTarget) {
@@ -91,8 +105,8 @@ export function createPlayerController(
       if (dist <= c.arriveEpsilon) {
         moveTarget = null;
       } else {
-        vx = (dx / dist) * c.maxSpeed;
-        vz = (dz / dist) * c.maxSpeed;
+        vx = (dx / dist) * speed;
+        vz = (dz / dist) * speed;
         moved = true;
       }
     }
@@ -118,6 +132,14 @@ export function createPlayerController(
     moveTarget = target;
   }
 
+  function setSpeedMultiplier(multiplier: number): void {
+    speedMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  function setFacingRad(rad: number): void {
+    _facingRad = rad;
+  }
+
   function reset(player: EntityVisualHandle, arena: ArenaHandle): void {
     const spawn = defaultSpawn(arena.halfExtent);
     player.setPosition(spawn.x, c.fixedY, spawn.z);
@@ -129,6 +151,8 @@ export function createPlayerController(
   return {
     update,
     setMoveTarget,
+    setSpeedMultiplier,
+    setFacingRad,
     reset,
     get facingRad(): number {
       return _facingRad;
