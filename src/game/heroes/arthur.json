@@ -27,6 +27,7 @@
       "activeTime": 0.2,
       "recoveryTime": 0.15,
       "cooldown": 6.0,
+      "castMode": "instant",
       "effect": {
         "moveSpeedBoost": 0.4,
         "duration": 3.0,
@@ -43,6 +44,7 @@
       "activeTime": 0.25,
       "recoveryTime": 0.3,
       "cooldown": 5.0,
+      "castMode": "instant",
       "effect": {
         "damage": 180,
         "hits": 3
@@ -58,6 +60,7 @@
       "activeTime": 0.15,
       "recoveryTime": 0.4,
       "cooldown": 8.0,
+      "castMode": "targeted",
       "effect": {
         "damage": 350,
         "dashDistance": 6,
@@ -74,6 +77,7 @@
       "activeTime": 0.1,
       "recoveryTime": 0.15,
       "cooldown": 0.55,
+      "castMode": "instant",
       "effect": {
         "damage": 130
       }

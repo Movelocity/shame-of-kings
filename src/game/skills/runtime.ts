@@ -9,7 +9,7 @@
 //  - cast 阶段不结算伤害,active 阶段每 tick 用 hit shape 计算
 //  - displacement='dash' 一次性把 caster 推到 origin + forward*dashDistance
 //    (遇墙停由 caller 在调用前用 pushOutOfBounds 处理,M2 不内置碰撞)
-//  - cooldownTimer 在 onCast 立即置为 cooldown;cast → done 后归零
+//  - cooldownTimer 在 onCast 立即置为 cooldown；done 后仍需由上层持续 tick 到 0
 //  - cancel():任意阶段直接置 done,后续 tick 立刻返回
 import type {
   DamageResult,
@@ -55,7 +55,10 @@ export function startSkill(
     tick(dt: number, ctx: SkillContext) {
       // KI-1:cooldownTimer 跨 done 后仍持续减 dt,直到 ≤ 0 时由 caller 解除施法拦截
       // (见 GameCanvas.onKeyDown)。必须放在 done 早返之前,否则 done 之后 CD 永远卡住。
-      if (inst.cooldownTimer > 0) inst.cooldownTimer = Math.max(0, inst.cooldownTimer - dt);
+      if (inst.cooldownTimer > 0) {
+        const remaining = inst.cooldownTimer - dt;
+        inst.cooldownTimer = remaining <= 1e-9 ? 0 : remaining;
+      }
       if (inst.phase === 'done') return inst.damage;
       inst.elapsed += dt;
       // 每阶段持续时间到 → 推进到下一阶段

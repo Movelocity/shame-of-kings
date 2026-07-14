@@ -28,6 +28,7 @@ export interface ArthurData {
     activeTime: number;
     recoveryTime: number;
     cooldown: number;
+    castMode?: Skill['castMode'];
     effect: {
       damage?: number;
       hits?: number;
@@ -76,6 +77,7 @@ export function loadArthurSkills(): readonly Skill[] {
       recoveryTime: s.recoveryTime,
       cooldown: s.cooldown,
       dashDistance: s.effect.dashDistance ?? 0,
+      castMode: s.castMode ?? 'instant',
     };
     if (s.id === 'whirlwind-strike' && s.effect.damage) {
       return makeSkill({

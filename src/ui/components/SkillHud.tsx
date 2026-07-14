@@ -13,10 +13,9 @@
 //     由 GameCanvas 判定"在 .skill-hud__cancel 内" → 取消;否则 → 释放
 //   - 瞄准中态:.skill-hud__cancel 加 'is-aiming' class(M3 styles.css 没定义,GameCanvas
 //     通过 prop aimingHotkey 注入;CSS 在 styles.css 里追加一个高亮态)
-//   - CD 中 / locked 中 .skill-orb 不接 pointer(走 button disabled 拦截)
+//   - CD 中 / locked 中 .skill-orb 在事件入口短路
 //
-// 移动端 vs 桌面端:按压接管通过 .skill-orb 自身的 pointer 事件,
-// desktop 走 GameCanvas keyDown 1/2/3/0 键(无 onPressStart 调用,不影响)
+// Pointer Events 在触摸和鼠标设备上共用；桌面端同时保留 1/2/3/0 热键。
 import {
   forwardRef,
   useImperativeHandle,
@@ -43,9 +42,9 @@ export interface SkillHudHandle {
 }
 
 export interface SkillHudProps {
-  /** 移动端按压回调 */
+  /** 技能按钮按压回调 */
   onPressStart?: (hotkey: string) => void;
-  /** 移动端按压抬起;targeted 模式 GameCanvas 拿到 clientX/Y + inside 判定 cancel vs 释放 */
+  /** 技能按钮抬起；targeted 模式由 GameCanvas 按坐标判定取消或释放 */
   onPressEnd?: (info: {
     hotkey: string;
     clientX: number;
@@ -151,11 +150,18 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     const isReady = cdRemaining <= 0 && !isLocked;
     const castMode = castModes[item.hotkey] ?? 'instant';
     const isCooling = !isReady;
+    const cooldownRatio =
+      state && state.cooldownMax > 0
+        ? Math.max(0, Math.min(1, cdRemaining / state.cooldownMax))
+        : isLocked
+          ? 1
+          : 0;
     const cls = [
       'skill-orb',
       `skill-orb--${item.kind}`,
       isCooling ? 'is-cooling' : '',
       castMode === 'targeted' ? 'is-targeted' : '',
+      aimingHotkey === item.hotkey ? 'is-aiming' : '',
     ]
       .filter(Boolean)
       .join(' ');
@@ -204,6 +210,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
             '--skill-x': `${item.x}px`,
             '--skill-y': `${item.y}px`,
             '--skill-size': `${item.size}px`,
+            '--cooldown-angle': `${cooldownRatio * 360}deg`,
           } as CSSProperties
         }
         aria-label={item.label}
@@ -257,6 +264,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
               : undefined
           }
           data-testid="skill-hud-cancel"
+          aria-hidden={!aimingHotkey}
         >
           取消
         </div>

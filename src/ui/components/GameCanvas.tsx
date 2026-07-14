@@ -15,8 +15,9 @@ import { ZERO_JOYSTICK, type JoystickState } from '../../engine/input/joystick';
 import { createKeyboardMove } from '../../engine/input/keyboard-move';
 import { isMobileUA } from '../../platform/isMobileUA';
 import { MobileControls } from './MobileControls';
-import { applyDamage, startSkill } from '../../game/skills/runtime';
-import type { Skill, SkillInstance, Unit } from '../../game/skills/types';
+import { applyDamage } from '../../game/skills/runtime';
+import type { Skill, Unit } from '../../game/skills/types';
+import { createSkillBook } from '../../game/skills/skill-book';
 import { asUnit } from '../../game/skills/debug-skills/DebugWorld';
 import { arthurSkillByHotkey, ARTHUR_DATA } from '../../game/heroes/arthur';
 import { createPracticeDummy } from '../../game/units/practice-dummy';
@@ -24,6 +25,11 @@ import { createWorldState } from '../../game/world/WorldState';
 import { DamageFloaters } from '../../game/world/DamageFloaters';
 import { createWorldHpBars, FACTION_COLORS } from '../../game/world/WorldHpBars';
 import { SkillHud, type SkillHudHandle } from './SkillHud';
+
+const ARTHUR_CAST_MODES: Readonly<Record<string, Skill['castMode']>> =
+  Object.fromEntries(
+    ARTHUR_DATA.skills.map((skill) => [skill.hotkey, skill.castMode ?? 'instant']),
+  );
 
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
@@ -46,21 +52,22 @@ export function GameCanvas({
   const [aiming, setAiming] = useState<{ hotkey: string; skill: Skill } | null>(null);
   // 双写:state 触发 render,ref 供外层回调同步读最新值
   const aimStateRef = useRef<{ hotkey: string; skill: Skill } | null>(null);
-  aimStateRef.current = aiming;
-  // 把 activeSkillRef / playerUnit 提升为组件级 useRef,
+  // 把 SkillBook / playerUnit 提升为组件级 useRef,
   // 让外层 onMobilePressStart / onMobilePressEnd 也能读到 (而不是 useEffect 闭包内的局部变量)
-  const activeSkillRef = useRef<SkillInstance | null>(null);
+  const skillBookRef = useRef(createSkillBook());
   const playerUnitRef = useRef<Unit | null>(null);
-  const tryStartSkillByHotkey = (hotkey: string): void => {
-    const cur = activeSkillRef.current;
-    if (cur && (cur.phase !== 'done' || cur.cooldownTimer > 0)) return;
+  const setAimState = (next: { hotkey: string; skill: Skill } | null): void => {
+    aimStateRef.current = next;
+    setAiming(next);
+  };
+  const tryStartSkillByHotkey = (hotkey: string): boolean => {
     const skill = arthurSkillByHotkey(hotkey);
     const pu = playerUnitRef.current;
-    if (!skill || !pu) return;
-    activeSkillRef.current = startSkill(skill, pu, { forwardRad: pu.facingRad });
+    if (!skill || !pu) return false;
+    return skillBookRef.current.start(skill, pu, { forwardRad: pu.facingRad }) !== null;
   };
   const cancelAiming = (): void => {
-    setAiming(null);
+    setAimState(null);
   };
   // 判定 (clientX, clientY) 是否落在 .skill-hud__cancel DOMRect 内
   // (沿用 M3 已锁的取消区,不另建浮层)
@@ -80,37 +87,34 @@ export function GameCanvas({
     if (!cur) return;
     // 抬起点在 .skill-hud__cancel 内 → 视为取消;否则 → 释放
     if (!inside || isInsideCancelRect(clientX, clientY)) {
-      setAiming(null);
+      setAimState(null);
       return;
     }
     tryStartSkillByHotkey(cur.hotkey);
-    setAiming(null);
+    setAimState(null);
   };
-  const onMobilePressStart = (hotkey: string): void => {
-    if (!isMobile.current) return;
+  const onSkillPressStart = (hotkey: string): void => {
     const skill = arthurSkillByHotkey(hotkey);
     if (!skill) return;
-    const cur = activeSkillRef.current;
-    if (cur && (cur.phase !== 'done' || cur.cooldownTimer > 0)) return;
+    if (aimStateRef.current || !skillBookRef.current.canStart(skill.id)) return;
     if (skill.castMode === 'targeted') {
-      setAiming({ hotkey, skill });
+      setAimState({ hotkey, skill });
     } else {
       tryStartSkillByHotkey(hotkey);
     }
   };
-  const onMobilePressEnd = (info: {
+  const onSkillPressEnd = (info: {
     hotkey: string;
     clientX: number;
     clientY: number;
     inside: boolean;
   }): void => {
-    if (!isMobile.current) return;
     if (!info.inside) {
       // 手指 / 鼠标滑出按钮 → 视为 cancel
       cancelAiming();
       return;
     }
-    if (aimStateRef.current) {
+    if (aimStateRef.current?.hotkey === info.hotkey) {
       commitAimingFromPointer(info.clientX, info.clientY, true);
     }
   };
@@ -126,6 +130,7 @@ export function GameCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const skillBook = skillBookRef.current;
 
     isMobile.current = isMobileUA();
     const keyboard = createKeyboardMove();
@@ -150,23 +155,18 @@ export function GameCanvas({
       gameScene.reset();
       // 2. dummy 满血
       dummyUnit.hp = dummyUnit.hpMax;
-      // 3. 清空 activeSkill(避免中途的技能继续推进;CD 也要清,否则锁住后续施法)
-      const active = activeSkillRef.current;
-      if (active) {
-        active.cancel();
-        active.cooldownTimer = 0;
-      }
-      activeSkillRef.current = null;
+      // 3. 清空当前施法和每技能冷却
+      skillBook.reset();
       // 4. dummy setRingPulse(0) 关闭残留闪烁
       gameScene.dummy.setRingPulse(0);
       // 5. T4:清掉瞄准中态(玩家在 targeted 技能按住时按"重置",应一起清)
-      setAiming(null);
+      setAimState(null);
     };
 
     // M3 T3.3:WorldState 替换 M2 DebugWorld
     const playerUnit: Unit = asUnit(gameScene.player, 'player', ARTHUR_DATA.stats.hpMax, false);
     const dummyUnit: Unit = createPracticeDummy();
-    // 把 playerUnit / activeSkillRef 写入组件级 ref,
+    // 把 playerUnit 写入组件级 ref,
     // 让外层 onMobilePressStart / onMobilePressEnd 也能访问
     playerUnitRef.current = playerUnit;
     const world = createWorldState({ units: [playerUnit, dummyUnit] });
@@ -227,14 +227,12 @@ export function GameCanvas({
     canvas.addEventListener('click', onCanvasClick as unknown as EventListener);
 
     // 1/2/3 键触发亚瑟 3 个主动技能;0 普攻
-    // KI-1 修法:入口处先查 cooldownTimer,未到 0 直接拦截(M3 之前只看 phase,允许无限连点)
+    // 桌面热键沿用按下即施；SkillBook 统一处理当前施法槽和每技能独立冷却。
     function onKeyDown(e: KeyboardEvent): void {
       if (!['1', '2', '3', '0'].includes(e.key)) return;
-      const active = activeSkillRef.current;
-      if (active && (active.phase !== 'done' || active.cooldownTimer > 0)) return;
       const skill = arthurSkillByHotkey(e.key);
       if (!skill) return;
-      activeSkillRef.current = startSkill(skill, playerUnit, {
+      skillBook.start(skill, playerUnit, {
         forwardRad: playerUnit.facingRad,
       });
     }
@@ -257,27 +255,26 @@ export function GameCanvas({
         playerUnit.position.z = gameScene.player.root.position.z;
         playerUnit.facingRad = gameScene.controller.facingRad;
 
-        // 推进 active skill
-        const active = activeSkillRef.current;
-        if (active && active.phase !== 'done') {
-          active.tick(dt, { caster: playerUnit, world, now: 0 });
-          if (activeSkillRef.current?.phase === 'done') {
-            const results = active.damage;
-            applyDamage([dummyUnit, playerUnit], results);
-            world.notifyDamage(results);
-            if (results.length > 0) {
-              gameScene.dummy.setRingPulse(1);
-            }
-            if (active.skill.displacement === 'dash') {
-              gameScene.player.setPosition(
-                playerUnit.position.x,
-                0,
-                playerUnit.position.z,
-              );
-            }
+        // 统一推进当前施法与所有技能冷却；done 后释放施法槽，冷却继续独立倒计时。
+        const completedSkills = skillBook.tick(dt, {
+          caster: playerUnit,
+          world,
+          now: 0,
+        });
+        for (const completed of completedSkills) {
+          const results = completed.damage;
+          applyDamage([dummyUnit, playerUnit], results);
+          world.notifyDamage(results);
+          if (results.length > 0) {
+            gameScene.dummy.setRingPulse(1);
           }
-        } else if (active && active.phase === 'done' && active.cooldownTimer <= 0) {
-          activeSkillRef.current = null;
+          if (completed.skill.displacement === 'dash') {
+            gameScene.player.setPosition(
+              playerUnit.position.x,
+              0,
+              playerUnit.position.z,
+            );
+          }
         }
 
         // KI-1:每帧把 4 技能的 cooldownTimer / locked 写到 SkillHud HUD
@@ -287,15 +284,13 @@ export function GameCanvas({
           for (const hotkey of ['0', '1', '2', '3'] as const) {
             const sk = arthurSkillByHotkey(hotkey);
             if (!sk) continue;
-            const cur = activeSkillRef.current;
-            const isThisActive =
-              cur !== null && cur.phase !== 'done' && cur.skill.id === sk.id;
+            const active = skillBook.active;
             hud.updateButton(hotkey, {
               name: sk.displayName,
               hotkey,
-              cooldownRemaining: isThisActive ? cur.cooldownTimer : 0,
+              cooldownRemaining: skillBook.cooldownRemaining(sk.id),
               cooldownMax: sk.cooldown,
-              locked: isThisActive && cur.phase !== 'recovery',
+              locked: active !== null,
             });
           }
         }
@@ -323,6 +318,8 @@ export function GameCanvas({
       gameScene.scene.remove(hpBars.group);
       gameScene.dispose();
       renderer.dispose();
+      skillBook.reset();
+      playerUnitRef.current = null;
       sceneRef.current = null;
     };
   }, [sceneRef]);
@@ -364,9 +361,10 @@ export function GameCanvas({
           aimingHotkey 非空时该区域加 .is-aiming class) */}
       <SkillHud
         ref={skillHudRef}
-        onPressStart={onMobilePressStart}
-        onPressEnd={onMobilePressEnd}
+        onPressStart={onSkillPressStart}
+        onPressEnd={onSkillPressEnd}
         aimingHotkey={aiming?.hotkey ?? null}
+        castModes={ARTHUR_CAST_MODES}
       />
     </>
   );
