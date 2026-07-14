@@ -16,7 +16,7 @@ export type HitShape =
   | { kind: 'self' }
   | { kind: 'circle'; radius: number }
   | { kind: 'rect'; halfWidth: number; halfDepth: number }
-  | { kind: 'cone'; range: number; halfAngleRad: number; forwardRad: number }
+  | { kind: 'cone'; range: number; halfAngleRad: number }
   | { kind: 'target'; range: number };
 
 /** 位移方式(proposal §5.2 锁定,不允许 y±) */
@@ -133,6 +133,8 @@ export interface SkillInstance {
   forwardRad: number;
   /** 中断接口:reset / 被打断技能时调,直接 phase='done' */
   cancel(): void;
+  /** 本帧(或最近一次)结算的伤害结果;供 caller 触发飘字/扣血 */
+  damage: readonly DamageResult[];
   /** 推进一帧 dt;返回本帧新结算的伤害(可空数组) */
   tick(dt: number, ctx: SkillContext): readonly DamageResult[];
 }
