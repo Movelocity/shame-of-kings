@@ -1,0 +1,82 @@
+{
+  "$schema": "./arthur.schema.json",
+  "id": "arthur",
+  "displayName": "Arthur",
+  "stats": {
+    "hpMax": 1200,
+    "attackDamage": 130,
+    "moveSpeed": 380
+  },
+  "passive": {
+    "id": "holy-shield",
+    "name": "Holy Shield",
+    "description": "受伤害有概率回血;脱战后加速",
+    "triggerChance": 0.25,
+    "healRatio": 0.06,
+    "outOfCombatSpeedBoost": 0.15,
+    "outOfCombatWindow": 5.0
+  },
+  "skills": [
+    {
+      "id": "shield-of-pact",
+      "name": "Shield of Pact",
+      "hotkey": "1",
+      "hit": { "kind": "self" },
+      "displacement": "ground",
+      "castTime": 0.15,
+      "activeTime": 0.2,
+      "recoveryTime": 0.15,
+      "cooldown": 6.0,
+      "effect": {
+        "moveSpeedBoost": 0.4,
+        "duration": 3.0,
+        "nextAttackBonus": 1.5
+      }
+    },
+    {
+      "id": "whirlwind-strike",
+      "name": "Whirlwind Strike",
+      "hotkey": "2",
+      "hit": { "kind": "circle", "radius": 3 },
+      "displacement": "none",
+      "castTime": 0.1,
+      "activeTime": 0.25,
+      "recoveryTime": 0.3,
+      "cooldown": 5.0,
+      "effect": {
+        "damage": 180,
+        "hits": 3
+      }
+    },
+    {
+      "id": "sacred-judgement",
+      "name": "Sacred Judgement",
+      "hotkey": "3",
+      "hit": { "kind": "target", "range": 8 },
+      "displacement": "dash",
+      "castTime": 0.3,
+      "activeTime": 0.15,
+      "recoveryTime": 0.4,
+      "cooldown": 8.0,
+      "effect": {
+        "damage": 350,
+        "dashDistance": 6,
+        "stunDuration": 0.6
+      }
+    },
+    {
+      "id": "auto-attack",
+      "name": "Auto Attack",
+      "hotkey": "0",
+      "hit": { "kind": "rect", "halfWidth": 0.8, "halfDepth": 1.2 },
+      "displacement": "none",
+      "castTime": 0.0,
+      "activeTime": 0.1,
+      "recoveryTime": 0.15,
+      "cooldown": 0.55,
+      "effect": {
+        "damage": 130
+      }
+    }
+  ]
+}
