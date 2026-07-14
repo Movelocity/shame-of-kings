@@ -39,4 +39,4 @@ coverage/
 .oxlintrc.local
 
 # MiMoCode 工作区元数据(用户与编辑器栈,不入仓)
-.mimocode/
+# .mimocode/

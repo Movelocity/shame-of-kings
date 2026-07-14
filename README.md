@@ -1,7 +1,6 @@
-# Web MOBA 手法练习场
+# Shame of Kings 练习场
 
-> 移动端浏览器离线运行的 Moba 技能练习场,纯前端 Demo / 学习项目。
-> MVP 第一刀:亚瑟 + 木人桩.
+> 移动端浏览器离线运行的 Moba 技能练习场，纯前端 Demo / 学习项目。用 Vibe Coding 做好玩又方便的游戏
 
 ## 技术栈
 
@@ -22,6 +21,8 @@ pnpm lint           # oxlint
 ```
 
 ## 设计文档
+
+我们认为荣耀是结果，耻辱是过程。我们选择讲过程的故事，从而将项目命名为 Shame of Kings。
 
 项目核心方案见 [`proposal.md`](./proposal.md)。包含:
 
