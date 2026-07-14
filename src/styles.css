@@ -13,3 +13,213 @@ body,
 * {
   box-sizing: border-box;
 }
+
+.skill-hud {
+  position: fixed;
+  right: max(42px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 60;
+  width: 400px;
+  height: 400px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.skill-hud__toggle {
+  position: absolute;
+  right: 0;
+  bottom: 352px;
+  display: grid;
+  grid-template-columns: repeat(2, 54px);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(238, 245, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(13, 18, 27, 0.66);
+  box-shadow: 0 10px 26px rgba(2, 8, 18, 0.28);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.skill-hud__toggle button {
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(235, 243, 255, 0.72);
+  font: 700 12px/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.skill-hud__toggle button.is-active {
+  background: linear-gradient(180deg, #e9f4ff, #95c8ff);
+  color: #172235;
+  box-shadow: inset 0 -1px 0 rgba(28, 63, 110, 0.25);
+}
+
+.skill-hud__pad {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  width: 330px;
+  height: 226px;
+  border-radius: 50%;
+}
+
+.skill-hud__pad::before {
+  content: '';
+  position: absolute;
+  right: -10px;
+  bottom: -20px;
+  width: 318px;
+  height: 204px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 76% 72%, rgba(255, 255, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 72% 72%, rgba(21, 30, 43, 0.54), transparent 68%);
+  filter: blur(1px);
+}
+
+.skill-hud__cancel {
+  position: absolute;
+  right: 20px;
+  bottom: 260px;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 117, 126, 0.45);
+  border-radius: 50%;
+  background: rgba(82, 20, 30, 0.62);
+  color: rgba(255, 235, 238, 0.9);
+  font: 800 12px/1 system-ui, -apple-system, sans-serif;
+  box-shadow: 0 10px 28px rgba(51, 5, 11, 0.32);
+}
+
+.skill-orb {
+  --skill-x: 0px;
+  --skill-y: 0px;
+  --skill-size: 64px;
+  position: absolute;
+  right: calc(6px - var(--skill-x));
+  bottom: calc(6px - var(--skill-y));
+  width: var(--skill-size);
+  height: var(--skill-size);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  justify-items: center;
+  padding: 9px 5px 8px;
+  border: 1px solid rgba(241, 248, 255, 0.48);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 25%, rgba(255, 255, 255, 0.34), transparent 20%),
+    linear-gradient(145deg, rgba(67, 124, 188, 0.94), rgba(28, 49, 76, 0.95));
+  color: #f8fbff;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.12),
+    inset 0 -8px 18px rgba(0, 0, 0, 0.26),
+    0 10px 24px rgba(3, 10, 24, 0.34);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.skill-orb--attack {
+  background:
+    radial-gradient(circle at 36% 25%, rgba(255, 255, 255, 0.35), transparent 18%),
+    linear-gradient(145deg, #f4c55f, #a75725 58%, #4a2530);
+  border-color: rgba(255, 236, 182, 0.78);
+}
+
+.skill-orb--ultimate {
+  background:
+    radial-gradient(circle at 36% 25%, rgba(255, 255, 255, 0.34), transparent 18%),
+    linear-gradient(145deg, #76d4ff, #4056c5 52%, #472464);
+  border-color: rgba(204, 237, 255, 0.72);
+}
+
+.skill-orb--utility {
+  background:
+    radial-gradient(circle at 36% 25%, rgba(255, 255, 255, 0.24), transparent 18%),
+    linear-gradient(145deg, rgba(71, 84, 99, 0.94), rgba(24, 32, 45, 0.95));
+  border-color: rgba(216, 226, 237, 0.4);
+}
+
+.skill-orb.is-cooling::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: conic-gradient(rgba(4, 8, 15, 0.76) 0deg 220deg, transparent 220deg);
+}
+
+.skill-orb__icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  font: 900 22px/1 system-ui, -apple-system, sans-serif;
+}
+
+.skill-orb--utility .skill-orb__icon {
+  font-size: 15px;
+}
+
+.skill-orb__label {
+  position: relative;
+  z-index: 1;
+  max-width: 100%;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.88);
+  font: 800 11px/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-orb--utility .skill-orb__label {
+  font-size: 10px;
+}
+
+.skill-orb__cooldown {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font: 900 18px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.skill-orb__upgrade {
+  position: absolute;
+  right: 52px;
+  top: -33px;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(237, 207, 37, 0.9);
+  border-radius: 50%;
+  background: #fff25f57;
+  color: #322f0c;
+  font: 900 18px/1 system-ui, -apple-system, sans-serif;
+  box-shadow: 0 4px 10px rgba(19, 49, 12, 0.3);
+}
+
+@media (max-width: 720px) {
+  .skill-hud {
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: 360px;
+    height: 272px;
+    transform: scale(0.86);
+    transform-origin: right bottom;
+  }
+}

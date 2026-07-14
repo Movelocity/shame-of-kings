@@ -1,8 +1,9 @@
 // proposal §3.1 #9 + §5.5 #7:仅 dev 构建展示,FPS / 玩家坐标 / 摇杆向量 / 移动目标
 //
 // 2026-07-14 改:
-//   - 背景透明度 0.9 → 0.5(半透)
-//   - 折叠/展开按钮移到面板**左外侧**(独立 fixed 元素,top 与面板顶端对齐)
+//   - 背景透明度 0.9 → 0.5(半透,更"高级感")
+//   - 面板位置:右上 → **左上**(left: 8,top: 8)
+//   - 折叠/展开按钮:贴面板**左内沿**(内部左上角,因左上角无"更左"空间)
 //   - 内嵌"重置"按钮 — 替代 proposal §3.1 #5 的"屏幕中上重置按钮"
 //
 // 点击穿透修复(2026-07-14 b):
@@ -49,7 +50,7 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
   const cam = scene?.follow.camera;
   const camOffset = scene?.follow.getCameraOffset();
 
-  // 折叠态:面板信息区不渲染,只显示一个独立的"展开"小按钮(面板左外侧对齐)
+  // 折叠态:只显示一个独立"展开"小按钮(贴在 panel 顶位,left 8)
   if (collapsed) {
     return (
       <button
@@ -57,11 +58,10 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
         onClick={() => setCollapsed(false)}
         data-testid="debug-expand"
         aria-label="展开调试面板"
-        // 折叠态展开按钮:放在 panel 右侧外部 8px(top 对齐面板顶端)
         style={{
           position: 'fixed',
-          top: 8, // 与 panel 顶端对齐
-          right: 188, // panel minWidth 180 + 自身 padding 8 = 188,留 8px 间距
+          top: 8, // 与原 panel 顶端对齐
+          left: 8,
           zIndex: 30,
           width: 24,
           height: 24,
@@ -84,116 +84,110 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
     );
   }
 
-  // 展开态:面板 + 左外侧折叠按钮
+  // 展开态:面板(左上角) + 内部左上角折叠按钮
   return (
-    <>
-      {/* 左外侧折叠按钮(独立 fixed 元素) */}
+    <div
+      data-testid="debug-overlay"
+      style={{
+        position: 'fixed',
+        top: 8,
+        left: 8, // 移到左上角
+        zIndex: 30,
+        padding: '8px 10px 8px 28px', // 左 padding 28 给内部折叠按钮留位
+        background: 'rgba(255, 255, 255, 0.5)',
+        color: '#1a2230',
+        border: '1px solid rgba(20, 28, 48, 0.18)',
+        boxShadow: '0 2px 6px rgba(20, 28, 48, 0.12)',
+        font: '12px ui-monospace, "SF Mono", Menlo, monospace',
+        borderRadius: 6,
+        minWidth: 180,
+        pointerEvents: 'none', // 容器透 pointer,只按钮区显式 auto
+      }}
+    >
+      {/* 内部折叠按钮(贴左内沿) */}
       <button
         type="button"
         onClick={() => setCollapsed(true)}
         data-testid="debug-collapse"
         aria-label="折叠调试面板"
         style={{
-          position: 'fixed',
-          top: 8, // 与 panel 顶端对齐
-          right: 188, // 紧贴 panel 左侧
-          zIndex: 30,
-          width: 24,
-          height: 24,
+          position: 'absolute',
+          top: 6, // 与 panel 内边距对齐
+          left: 6,
+          width: 18,
+          height: 18,
           padding: 0,
-          background: 'rgba(255, 255, 255, 0.5)',
+          background: 'transparent',
+          border: '1px solid rgba(20, 28, 48, 0.35)',
+          borderRadius: 3,
           color: '#1a2230',
-          border: '1px solid rgba(20, 28, 48, 0.18)',
-          boxShadow: '0 2px 6px rgba(20, 28, 48, 0.12)',
-          font: '700 14px ui-monospace, "SF Mono", Menlo, monospace',
-          borderRadius: 4,
           cursor: 'pointer',
+          font: '700 12px ui-monospace, "SF Mono", Menlo, monospace',
+          lineHeight: 1,
           touchAction: 'manipulation',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          pointerEvents: 'auto', // 显式开启(父容器是 none)
         }}
       >
         −
       </button>
 
-      {/* 面板(信息区 pointerEvents:none,只按钮区可点) */}
-      <div
-        data-testid="debug-overlay"
-        style={{
-          position: 'fixed',
-          top: 8,
-          right: 8,
-          zIndex: 30,
-          padding: '8px 10px',
-          background: 'rgba(255, 255, 255, 0.5)',
-          color: '#1a2230',
-          border: '1px solid rgba(20, 28, 48, 0.18)',
-          boxShadow: '0 2px 6px rgba(20, 28, 48, 0.12)',
-          font: '12px ui-monospace, "SF Mono", Menlo, monospace',
-          borderRadius: 6,
-          minWidth: 180,
-          pointerEvents: 'none', // 容器透 pointer,只按钮区显式 auto
-        }}
-      >
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>DEBUG</div>
-        <div>FPS: {fps.current.toFixed(0)}</div>
-        {player && (
-          <>
-            <div style={{ marginTop: 4, fontWeight: 700 }}>player</div>
-            <div>
-              x: {player.x.toFixed(2)}  z: {player.z.toFixed(2)}
-            </div>
-            <div>
-              facing: {(((scene?.player.root.rotation.y ?? 0) * 180) / Math.PI - 180) | 0}°
-            </div>
-          </>
-        )}
-        {dummy && <div>dummy x: {dummy.x.toFixed(2)}  z: {dummy.z.toFixed(2)}</div>}
-        {cam && (
-          <>
-            <div style={{ marginTop: 4, fontWeight: 700 }}>camera</div>
-            <div>
-              x: {cam.position.x.toFixed(2)}  z: {cam.position.z.toFixed(2)}
-            </div>
-          </>
-        )}
-        {camOffset && (
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>DEBUG</div>
+      <div>FPS: {fps.current.toFixed(0)}</div>
+      {player && (
+        <>
+          <div style={{ marginTop: 4, fontWeight: 700 }}>player</div>
           <div>
-            offset x: {camOffset.x.toFixed(2)}  z: {camOffset.z.toFixed(2)}
+            x: {player.x.toFixed(2)}  z: {player.z.toFixed(2)}
           </div>
-        )}
-        {onReset && (
-          <div
+          <div>
+            facing: {(((scene?.player.root.rotation.y ?? 0) * 180) / Math.PI - 180) | 0}°
+          </div>
+        </>
+      )}
+      {dummy && <div>dummy x: {dummy.x.toFixed(2)}  z: {dummy.z.toFixed(2)}</div>}
+      {cam && (
+        <>
+          <div style={{ marginTop: 4, fontWeight: 700 }}>camera</div>
+          <div>
+            x: {cam.position.x.toFixed(2)}  z: {cam.position.z.toFixed(2)}
+          </div>
+        </>
+      )}
+      {camOffset && (
+        <div>
+          offset x: {camOffset.x.toFixed(2)}  z: {camOffset.z.toFixed(2)}
+        </div>
+      )}
+      {onReset && (
+        <div
+          style={{
+            marginTop: 6,
+            paddingTop: 6,
+            borderTop: '1px solid rgba(20,28,48,0.12)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onReset}
+            data-testid="debug-reset"
             style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: '1px solid rgba(20,28,48,0.12)',
+              width: '100%',
+              padding: '4px 0',
+              background: 'transparent',
+              border: '1px solid rgba(20, 28, 48, 0.35)',
+              borderRadius: 3,
+              color: '#1a2230',
+              cursor: 'pointer',
+              font: '11px ui-monospace, "SF Mono", Menlo, monospace',
+              letterSpacing: '0.1em',
+              touchAction: 'manipulation',
+              pointerEvents: 'auto', // 显式开启(父容器是 none)
             }}
           >
-            <button
-              type="button"
-              onClick={onReset}
-              data-testid="debug-reset"
-              style={{
-                width: '100%',
-                padding: '4px 0',
-                background: 'transparent',
-                border: '1px solid rgba(20, 28, 48, 0.35)',
-                borderRadius: 3,
-                color: '#1a2230',
-                cursor: 'pointer',
-                font: '11px ui-monospace, "SF Mono", Menlo, monospace',
-                letterSpacing: '0.1em',
-                touchAction: 'manipulation',
-                pointerEvents: 'auto', // 显式开启(父容器是 none)
-              }}
-            >
-              重置
-            </button>
-          </div>
-        )}
-      </div>
-    </>
+            重置
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

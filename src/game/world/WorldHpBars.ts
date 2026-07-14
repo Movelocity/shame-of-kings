@@ -21,6 +21,7 @@ interface BarVisual {
   offsetY: number;
   width: number;
   height: number;
+  baseColor: string;
   lastFillKey: string;
 }
 
@@ -110,9 +111,16 @@ function roundRect(
   ctx.closePath();
 }
 
-function pickFillColor(pct: number): string {
-  if (pct > 0.6) return '#3b78ff';
-  if (pct > 0.3) return '#ffb84a';
+// 阵营基色:玩家 = 蓝,敌人 = 红。register 时传入,在缓存里独立成图。
+export const FACTION_COLORS = {
+  player: '#3b78ff',
+  enemy: '#ff4d4f',
+} as const;
+
+// 按当前血量百分比,在阵营基色上调一档暗色,作为"残血警示"。
+// 低血量统一加深红调,保留原"危险"信号,与阵营色叠加不冲突。
+function pickFillColor(baseColor: string, pct: number): string {
+  if (pct > 0.3) return baseColor;
   return '#ff5151';
 }
 
@@ -170,6 +178,7 @@ export function createWorldHpBars(): WorldHpBarsHandle {
         offsetY,
         width,
         height,
+        baseColor: color,
         lastFillKey: color,
       });
     },
@@ -190,8 +199,8 @@ export function createWorldHpBars(): WorldHpBarsHandle {
         const pct = u.hpMax > 0 ? u.hp / u.hpMax : 0;
         // scale.x 表达百分比(bg/fill 都用 left anchor + 相同 position)
         b.fill.scale.x = Math.max(0, b.width * pct);
-        // 颜色随百分比变化(只在跨阈值时换贴图,避免每帧重设)
-        const fillKey = pickFillColor(pct);
+        // 颜色随阵营 + 血量变化(只在跨阈值时换贴图,避免每帧重设)
+        const fillKey = pickFillColor(b.baseColor, pct);
         if (fillKey !== b.lastFillKey) {
           b.fillMat.map = getOrCreateFullFill(fillKey);
           b.fillMat.needsUpdate = true;

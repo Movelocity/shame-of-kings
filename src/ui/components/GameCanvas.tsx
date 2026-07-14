@@ -22,7 +22,7 @@ import { arthurSkillByHotkey, ARTHUR_DATA } from '../../game/heroes/arthur';
 import { createPracticeDummy } from '../../game/units/practice-dummy';
 import { createWorldState } from '../../game/world/WorldState';
 import { DamageFloaters } from '../../game/world/DamageFloaters';
-import { createWorldHpBars } from '../../game/world/WorldHpBars';
+import { createWorldHpBars, FACTION_COLORS } from '../../game/world/WorldHpBars';
 
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
@@ -88,8 +88,8 @@ export function GameCanvas({
 
     // T19:世界空间血条(billboard 跟随单位)
     const hpBars = createWorldHpBars();
-    hpBars.register(playerUnit, '#3b78ff', 1.6, 1.6, 0.18);
-    hpBars.register(dummyUnit, '#1fa4a8', 1.4, 1.8, 0.2);
+    hpBars.register(playerUnit, FACTION_COLORS.player, 1.6, 1.6, 0.18);
+    hpBars.register(dummyUnit, FACTION_COLORS.enemy, 1.4, 1.8, 0.2);
     gameScene.scene.add(hpBars.group);
 
     // M3 T3.5:飘字(Sprite)挂到 scene
