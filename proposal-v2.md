@@ -1,0 +1,219 @@
+# Shame of Kings · 提案 v2：地图与英雄/技能并行演进
+
+> 本文件取代 `proposal.md` 作为当前生效提案；旧 `proposal.md` 保留作历史快照。
+> 任务结构：地图系统（map-design.md 范围）与英雄扩展（亚瑟/元歌/镜）**并行推进**，
+> 以 `src/game/world/coords.ts` + Skill 框架的"非英雄施法者"扩展点作为**前置闸口**。
+
+## 0. 立项背景
+
+- `map-design.md` 描述的是 **100×80 三路 MOBA 地图**（塔、野区、河道、A* 寻路、视野、Minimap）。
+- `proposal.md` 锁定的 MVP 是 **32×32 练习场**。
+- 经分析（见 §1），地图与英雄/技能**部分独立**：
+  - 1 个硬耦合：坐标空间（连续世界单位 vs. 离散寻路网格）。
+  - 2 个协议耦合：视野过滤契约、技能支持非英雄施法者。
+  - 其余可独立推进。
+
+## 1. 范围决策
+
+| 决策 | 选择 | 落点 |
+|---|---|---|
+| 可玩地图（MVP 阶段） | 保持 32×32 练习场 | `src/engine/renderer/arena.ts` |
+| 障碍类型（MVP） | 仅柔化多边形 + Hard Wall | 同上 |
+| 寻路 / 视野 / Minimap（MVP） | 不做；M2/M3 不引入 | `proposal.md §3.4` |
+| `map-design.md` 整体 | 作为 P2 范围，与 M5/M6 并行；前置是 §3 闸口 | 本提案 §3 |
+| 坐标系 | MVP 沿用世界 x/z 连续；P2 起新增 `coords.ts` 做 world↔tile 转换 | `src/game/world/coords.ts` |
+| 旧 `proposal.md` | 保留作历史快照 | `proposal.md` |
+
+## 2. 架构与 commit 守则（继承 proposal §2.2 / §5.4，不修改）
+
+- 渲染/逻辑分离、固定步长、数据驱动、WorldState 序列化、InputState 归一
+- Skill 框架必须**一次定型**到能承载塔/野怪（非英雄施法者）
+- 木人桩永远静止；飘字走 Three.js Sprite 不走 React
+
+## 3. 前置闸口（任何分支开工前必须先落）
+
+> 这两件是"地图系统"和"英雄扩展"共用的接口；先定才能并行。
+
+- **G1**: `src/game/world/coords.ts` — `worldToTile(x, z)` / `tileToWorld(i, j)` /
+  `inBounds(i, j)` 三个纯函数。`tileSize=1`（与 map-design.md:44 对齐）。
+- **G2**: `src/game/skills/types.ts` — `SkillContext.caster: Unit | TowerUnit` 联合类型；
+  `DamageFormula` 接收 `(ctx, hit)` 并支持 `target.hidden` 过滤。
+  **先于 M2 写。**
+
+## 4. 里程碑
+
+```
+M0 引擎可见+横屏骨架 ─✓
+M1 地图+摇杆         ─✓
+[闸口] G1 coords.ts  ←── 计划阶段第一件事
+[闸口] G2 Skill 非英雄施法者扩展  ←── 计划阶段第二件事
+M2 技能框架（5 类命中盒 + 4 调试技能 + SkillInstance 状态机）
+M3 亚瑟成型
+M4 验收（DoD 8 条 + 元歌/镜/地图三大分支汇合点）
+M5 元歌           ║
+M6 镜             ║  ←── 三条线并行
+M7 移动端优化       ║
+P2.0 MOBA 地图数据层 ║
+P2.1 地形四分类      ║
+P2.2 寻路          ║
+P2.3 视野系统       ║
+P2.4 塔/野怪        ║
+P2.5 Minimap      ║
+```
+
+> M4 是"汇合点"：M4 退出门（DoD 8 条全过）= 后续三条分支可各自推 M5/M6/M7/P2.x。
+> M4 之前不写元歌/镜/MOBA 地图代码，避免在技能框架定型前并行导致接口反复改。
+
+## 5. 任务清单（按依赖排序）
+
+> 标记：👤 = 用户验收（按里程碑批量），🤖 = MiMoCode 实现，🔁 = 阶段性回归。
+> 每个任务的"前置"列依赖前面任务完成后才能开始。
+
+### 5.1 闸口阶段（计划阶段，1 工日内）
+
+- **T0.1** 🤖 写 `proposal-v2.md`（即本文件）。前置：无。`pnpm typecheck` 通过。
+- **T0.2** 🤖 写 `src/game/world/coords.ts`：纯函数 `worldToTile / tileToWorld / inBounds`。
+  前置：T0.1。`tileSize=1`。无副作用。
+- **T0.3** 🤖 写 `tests/world/coords.test.ts`：覆盖格边界、越界、负坐标、对称翻转。前置：T0.2。
+- **T0.4** 🤖 写 `src/game/skills/types.ts`（**先于 M2 写**）：`Skill`、`SkillInstance`、`HitShape`、
+  `SkillContext.caster: Unit | TowerUnit`、`DamageFormula` 接受 `target.hidden` 过滤。
+  前置：T0.2（坐标系先定）。
+- **T0.5** 🔁 跑 `pnpm typecheck` + `pnpm test`，全过。前置：T0.3 + T0.4。
+
+### 5.2 M2 技能框架（2.5 工日，串行）
+
+- **T2.1** 🤖 `src/game/skills/runtime.ts`：`tickSkill` 状态机（cast → active → recovery → done），与 `fixedDt=1/60` 对齐。前置：T0.4。
+- **T2.2** 🤖 `src/game/skills/hits.ts`：5 类命中盒（AABB/Circle/Cone/Target/self），纯 TS 可单测。前置：T0.4。
+- **T2.3** 🤖 `tests/skills/hits.test.ts` + `tests/skills/runtime.test.ts`：覆盖状态切换、中断、命中边界。前置：T2.1 + T2.2。
+- **T2.4** 🤖 `src/game/skills/debug-skills/`：4 个调试技能（passive / dash / circle AOE / target skill），dev-only 守卫。前置：T2.2。
+- **T2.5** 🤖 `GameCanvas.tsx` 加 `1/2/3/4` 键触发（`import.meta.env.DEV` 守卫）。前置：T2.4。
+- **T2.6** 🔁 typecheck + test 全过。前置：T2.5。
+
+### 5.3 M3 亚瑟（1 工日，串行）
+
+- **T3.1** 🤖 `src/game/heroes/arthur.json` + `arthur.ts`（4 技能数据 + 被动）。前置：T2.6。
+- **T3.2** 🤖 `src/game/units/practice-dummy.ts`（hp 1000、isStatic=true）。前置：T0.4。
+- **T3.3** 🤖 `src/game/world/WorldState.ts`（玩家 + 桩 + 技能实例 + 飘字队列）。前置：T0.4。
+- **T3.4** 🤖 `HpBar.tsx` + `DummyHpBar.tsx` + `SkillButton.tsx`（CD 转圈、锁定中）。前置：T3.3。
+- **T3.5** 🤖 飘字走 Three.js Sprite（**不走 React**）。前置：T3.3。
+- **T3.6** 🔁 桌面手动 4 技能全循环 + typecheck/test。前置：T3.5。
+
+### 5.4 M4 验收（2 工日，**真机验收批量**）
+
+- **T4.1** 🤖 重置按钮接 `controller.reset()` + 清空 SkillInstance 队列。前置：T3.6。
+- **T4.2** 🤖 `DebugOverlay.tsx`（FPS / 坐标 / 摇杆向量 / 技能阶段，dev-only）。前置：T3.6。
+- **T4.3** 🤖 修 iOS safe-area / 横竖屏切换残留；按 `proposal.md §5.5` 七条 review。前置：T4.2。
+- **T4.4** 👤 **【验收批 1：M4 真机】** iPhone + Android + 桌面三端跑完 §3.1 DoD 8 条 + M3 4 技能全循环。
+  录屏 + 真机日志 + 帧率截图。前置：T4.3。
+- **T4.5** 🤖 按 T4.4 反馈修 bug；每修一轮跑一遍 typecheck/test。前置：T4.4。
+- **T4.6** 🔁 **M4 退出门**：`pnpm typecheck` + `pnpm test` + `pnpm lint` + `pnpm build` 全过。前置：T4.5。
+  > M4 退出门 = 三条并行分支（M5 / M6 / P2）开工前提。
+
+### 5.5 M5 元歌 ║ M6 镜 ║ P2 MOBA 地图（**M4 退出门后并行**）
+
+> 三条分支同时启动。**M5 收尾 → 验；M6 收尾 → 验；P2 每阶段收尾 → 验**。
+> 每条分支内部有"汇合检查"：在加新英雄/新地图时跑一遍 M4 DoD 防回归。
+
+#### 分支 A：M5 元歌（4 工日）
+
+- **T5A.1** 🤖 `src/game/heroes/yuan-ge.ts` + JSON：4 技能 + 傀儡生成/收回。前置：M4 退出门。
+- **T5A.2** 🤖 `src/game/units/` 加双单位（本体 + 傀儡）。前置：T5A.1。
+- **T5A.3** 🔁 跑 M4 DoD 回归（防止元歌改坏引擎）。前置：T5A.2。
+- **T5A.4** 👤 **【验收批 2：元歌真机】** 4 技能 + 傀儡 + 收回在桩上可练。前置：T5A.3。
+
+#### 分支 B：M6 镜（3 工日）
+
+- **T5B.1** 🤖 `src/game/heroes/mirror.ts` + JSON：换位 + 飞雷神基础。前置：M4 退出门。
+- **T5B.2** 🤖 镜像轴实现：复用 `ground` / `dash` 两种 displacement。前置：T5B.1。
+- **T5B.3** 🔁 跑 M4 DoD 回归。前置：T5B.2。
+- **T5B.4** 👤 **【验收批 3：镜真机】** 换位 + 飞雷神基本流程。前置：T5B.3。
+
+#### 分支 C：P2 MOBA 地图（15 工日，分 6 个子阶段）
+
+> 此分支从 map-design.md 整体迁入；按子阶段验收。
+
+- **T5C.0** 🤖 写 `map.yaml` schema（TS interface）+ `loadMap.ts` 蓝方单边→红方自动镜像。前置：M4 退出门。
+- **T5C.1** 🤖 `src/engine/renderer/terrain.ts` + `terrain-textures.ts`：wall/bush/water/terrain_low 渲染。前置：T5C.0。
+- **T5C.2** 🤖 `src/game/world/navigation.ts`：NavigationGrid + A*（用 §3 G1 闸口的 `worldToTile`）。前置：T5C.0。
+- **T5C.3** 🤖 `src/game/world/vision.ts`：VisionSystem（视野半径 15，wall/bush 阻挡）。前置：T5C.0。
+- **T5C.4** 🤖 `src/game/units/tower.ts` + `jungle-mob.ts`：复用 Unit 基类；塔 = `Skill` 实例。前置：T0.4 + T5C.0。
+- **T5C.5** 🤖 `src/ui/components/Minimap.tsx`：200×200 Canvas 右下角。前置：T5C.1。
+- **T5C.6** 🤖 扩 `arena.ts` 支持加载 `map.yaml`（新增 `MapModel` 而非改 Arena）。前置：T5C.1。
+- **T5C.7** 🔁 跑 M4 DoD 回归 + 新增 4 类可视化用例。前置：T5C.6。
+- **T5C.8** 👤 **【验收批 4：MOBA 地图真机】** 三屏宽下视野/寻路/塔位/野怪营地全可见；帧率 ≥30。前置：T5C.7。
+- **T5C.9** 👤 **【验收批 5：草丛视野隔离】** 玩家进草丛、敌人不可见；反之亦然。前置：T5C.3。
+- **T5C.10** 👤 **【验收批 6：Minimap 同步】** 亚瑟/元歌/镜三英雄各跑一次。前置：T5C.5。
+
+### 5.6 M7 移动端体验（2 工日）
+
+- **T6.1** 🤖 性能 profile：draw call 数、纹理内存、shader 编译。前置：T5A.4 + T5B.4 + T5C.8（任选先完成的）。
+- **T6.2** 🤖 优化：纹理合并、shader 简化、关闭非必要 post-processing。前置：T6.1。
+- **T6.3** 👤 **【验收批 7：60fps】** iPhone 13 / 小米 12 ≥60fps，三个英雄都跑得动。前置：T6.2。
+- **T6.4** 🤖 远程发布（dev server 暴露局域网），写内网地址说明。前置：T6.3。
+
+## 6. 验收分配（按里程碑批量）
+
+| 验收批 | 触发条件 | 用户交付物 | MiMoCode 后续 |
+|---|---|---|---|
+| 批 1：M4 真机 | T4.3 完工 | iPhone + Android + 桌面三端录屏 + 帧率截图 | T4.5 修 bug |
+| 批 2：元歌真机 | T5A.3 完工 | 元歌 4 技能 + 傀儡录屏 | T5B.1 可启动 |
+| 批 3：镜真机 | T5B.3 完工 | 镜飞雷神录屏 | T6.1 可启动 |
+| 批 4：MOBA 地图真机 | T5C.7 完工 | 三屏宽录屏 + 帧率 | T5C.9 可启动 |
+| 批 5：草丛视野隔离 | T5C.3 完工 | 草丛内外对比录屏 | T5C.10 可启动 |
+| 批 6：Minimap 同步 | T5C.5 完工 | 三英雄 Minimap 录屏 | T6.1 可启动 |
+| 批 7：60fps | T6.2 完工 | 帧率截图 | — |
+
+## 7. 关键文件清单
+
+```
+src/
+├── engine/
+│   ├── renderer/            ← M1 已落地
+│   │   └── arena.ts         ← T5C.6 扩：支持 MapModel
+│   └── ...                  ← T0.4 后才动
+├── game/                    ← T0.2 起启用
+│   ├── world/
+│   │   ├── coords.ts        ← T0.2 新增（闸口）
+│   │   ├── WorldState.ts    ← T3.3 新增
+│   │   ├── navigation.ts    ← T5C.2 新增
+│   │   └── vision.ts        ← T5C.3 新增
+│   ├── skills/
+│   │   ├── types.ts         ← T0.4 新增（闸口）
+│   │   ├── runtime.ts       ← T2.1 新增
+│   │   ├── hits.ts          ← T2.2 新增
+│   │   └── debug-skills/    ← T2.4 新增
+│   ├── heroes/              ← T3.1 / T5A.1 / T5B.1 新增
+│   ├── units/               ← T3.2 / T5A.2 / T5C.4 新增
+│   └── data/                ← T5C.0 新增
+├── ui/                      ← T3.4 起加 HUD
+└── ...
+proposal.md                 ← 保留作历史快照
+proposal-v2.md              ← 本文件（T0.1）
+```
+
+## 8. 验证命令
+
+```bash
+pnpm exec tsc -b --force   # 阶段性回归（package.json 未注册 typecheck alias）
+pnpm test                  # vitest run
+pnpm lint                  # oxlint
+pnpm build                 # tsc + vite build
+pnpm dev                   # 本地调试
+```
+
+> 计划阶段不执行；实施阶段每里程碑收尾跑一次。
+
+## 9. 风险与缓解
+
+| 风险 | 缓解 |
+|---|---|
+| 闸口（G1/G2）没定就并行 → 接口反复改 | **M4 退出门** 是三条分支开工前提；T0.1-T0.5 必须先完工 |
+| 5 类命中盒不足（亚瑟可，元歌/镜写不出） | T0.4 把 `SkillContext.caster: Unit \| TowerUnit` 一次定型；T5A.1 / T5B.1 实施时若不足先回 proposal |
+| 寻路与 `displacement='ground'/'dash'` 不兼容 | T0.2 + T5C.2 都用同一个 `worldToTile` 闸口 |
+| 视野影响技能命中（漏协议） | T0.4 把 `target.hidden` 写进 `DamageFormula` 契约 |
+| 真机体验批次数过多 | 用户已选"按里程碑批量"——7 批 ≤ 7 个 task 块 |
+| 塔要"非英雄施法者"扩展，但亚瑟阶段没预留 | T0.4 闸口显式声明 `caster: Unit \| TowerUnit` |
+
+## 10. 一句话总结
+
+**先把 §3 闸口（coords + Skill 非英雄施法者）落地，再做 M2 技能框架和 M3 亚瑟；M4 真机验收通过后，元歌/镜/MOBA 地图三条线并行推进，按里程碑批量交付真机验收。**
