@@ -12,12 +12,13 @@ export interface FollowCameraConfig {
 }
 
 export const DEFAULT_FOLLOW_CAMERA: FollowCameraConfig = {
-  // 伪 2D:俯视更大(pitch 65°),离场地略远,接近顶视图但保留透视。
-  // yaw/pitch 完全锁死,只有 position 跟随玩家平移。
+  // T21:相机向玩家靠近 + 降低高度(原 dist=12/pitch=65° 太高太远)
+  // dist=9,pitch=55°:水平距离 ~5.2(几乎不变),相机高度 ~7.4(原 ~10.9,降 32%)
+  // yaw/pitch 完全锁死,只有 position 跟随玩家平移
   fov: 60,
-  pitchDeg: 65,
+  pitchDeg: 55,
   yawDeg: 0,
-  dist: 12,
+  dist: 9,
   aspect: typeof window !== 'undefined' ? window.innerWidth / window.innerHeight : 16 / 9,
   near: 0.1,
   far: 200,
