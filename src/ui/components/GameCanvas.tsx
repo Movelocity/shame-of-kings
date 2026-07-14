@@ -1,10 +1,10 @@
 // proposal §3.3 模块 A + §5.1:把 scene 挂到 canvas + 接入多种输入
-// 桌面端:WASD / 方向键 + 鼠标左键点击寻路(都要把屏幕轴归一为 JoystickState)
-// 移动端:虚拟摇杆(屏幕轴已经是 JoystickState)
+// 桌面端:WASD / 方向键 + 鼠标左键点击寻路
+// 移动端:虚拟摇杆
 // 通过 ref + 每帧 read 模式给 loop tick,不触发 React 重渲染
 //
-// M2 T2.5:dev-only,1/2/3/4 键触发 4 个调试技能,把 scene 的 player/dummy
-// 桥接到 Skill 框架的 Unit/WorldLike。M3 起由 WorldState.ts 替换 DebugWorld。
+// M3 T3.5:用 WorldState 替换 M2 临时 DebugWorld;DamageFloaters 走 Three.js Sprite;
+// 1/2/3 键触发亚瑟 3 个主动技能,0 键普攻(proposal §3.2 亚瑟 4 技能)
 import { useCallback, useEffect, useRef, type JSX, type MouseEvent as ReactMouseEvent } from 'react';
 import { Raycaster, Vector2, Vector3, WebGLRenderer } from 'three';
 import { REQUIRED_SHADOW_MAP } from '../../engine/renderer/lights';
@@ -16,11 +16,15 @@ import { isMobileUA } from '../../platform/isMobileUA';
 import { MobileControls } from './MobileControls';
 import { applyDamage, startSkill } from '../../game/skills/runtime';
 import type { SkillInstance, Unit } from '../../game/skills/types';
-import { debugSkillByHotkey } from '../../game/skills/debug-skills';
-import { createDebugWorld, asUnit } from '../../game/skills/debug-skills/DebugWorld';
+import { asUnit } from '../../game/skills/debug-skills/DebugWorld';
+import { arthurSkillByHotkey, ARTHUR_DATA } from '../../game/heroes/arthur';
+import { createPracticeDummy } from '../../game/units/practice-dummy';
+import { createWorldState } from '../../game/world/WorldState';
+import { DamageFloaters } from '../../game/world/DamageFloaters';
+import { HpBar } from './HpBar';
+import { DummyHpBar } from './DummyHpBar';
 
 interface GameCanvasProps {
-  /** 调试 UI(DebugOverlay)需要观察 scene。dev-only,生产 build 不渲染。 */
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
 }
 
@@ -30,6 +34,9 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
   const sceneRef = externalSceneRef ?? localSceneRef;
   const joyRef = useRef<JoystickState>(ZERO_JOYSTICK);
   const isMobile = useRef<boolean>(false);
+  // HUD 订阅的 unit ref(M3 起不再走 useState,避免每帧 React 重渲)
+  const playerRef = useRef<Unit | null>(null);
+  const dummyRef = useRef<Unit | null>(null);
 
   const handleSetCameraOffset = useCallback(
     (x: number, z: number) => {
@@ -60,14 +67,28 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
     });
     sceneRef.current = gameScene;
 
-    // M2 T2.5:把 scene 的 visual 桥到 Skill 框架
-    // 用 ref 而不是 useState:hot state 不需要触发 React 渲染
-    const playerUnit: Unit = asUnit(gameScene.player, 'player', 1000, false);
-    const dummyUnit: Unit = asUnit(gameScene.dummy, 'dummy', 1000, true);
-    const world = createDebugWorld(playerUnit, dummyUnit);
+    // M3 T3.3:WorldState 替换 M2 DebugWorld
+    const playerUnit: Unit = asUnit(gameScene.player, 'player', ARTHUR_DATA.stats.hpMax, false);
+    const dummyUnit: Unit = createPracticeDummy();
+    const world = createWorldState({ units: [playerUnit, dummyUnit] });
+    playerRef.current = playerUnit;
+    dummyRef.current = dummyUnit;
+
+    // M3 T3.5:飘字(Sprite)挂到 scene
+    const floaters = new DamageFloaters();
+    gameScene.scene.add(floaters.group);
+
+    // damage 事件 → 飘字
+    const unsubscribeDamage = world.subscribeDamage((results) => {
+      for (const r of results) {
+        const target = world.getUnit(r.targetId);
+        if (!target) continue;
+        floaters.add(r.targetId, r.damage, target.position, r.isCrit);
+      }
+    });
+
     const activeSkillRef = { current: null as SkillInstance | null };
-    // M2 调试阶段朝向固定 world -Z(玩家面朝地图深处)
-    // M3 T3.1 亚瑟上线后,从 controller 读实时 facing
+    // 朝向:由 controller 在 update 里设;M3 阶段先用 0(玩家朝 -Z)
     const FACING_RAD = 0;
 
     function onResize(): void {
@@ -78,9 +99,8 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
     }
     window.addEventListener('resize', onResize);
 
-    // 桌面端:鼠标点击寻路。raycast 落点 → world xz,设 moveTarget
     function onCanvasClick(e: ReactMouseEvent<HTMLCanvasElement>): void {
-      if (isMobile.current) return; // 移动端走摇杆
+      if (isMobile.current) return;
       if (e.button !== 0) return;
       const cam = gameScene.follow.camera;
       const rect = canvas!.getBoundingClientRect();
@@ -97,14 +117,14 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
     }
     canvas.addEventListener('click', onCanvasClick as unknown as EventListener);
 
-    // DEV-only:1/2/3/4 键触发调试技能
+    // 1/2/3 键触发亚瑟 3 个主动技能;0 普攻
     function onKeyDown(e: KeyboardEvent): void {
-      if (!import.meta.env.DEV) return;
-      if (!['1', '2', '3', '4'].includes(e.key)) return;
-      // 同帧已有 active → 不重入,避免覆盖未完结的实例(proposal §5.2:可中断但不该自动覆盖)
+      if (!['1', '2', '3', '0'].includes(e.key)) return;
+      // CD 检查:cooldownTimer > 0 不允许
       if (activeSkillRef.current && activeSkillRef.current.phase !== 'done') return;
-      const skill = debugSkillByHotkey(e.key as '1' | '2' | '3' | '4');
+      const skill = arthurSkillByHotkey(e.key);
       if (!skill) return;
+      // 进入施法:activeSkillRef 设新实例;cooldown 已由 startSkill 初始化
       activeSkillRef.current = startSkill(skill, playerUnit, {
         forwardRad: FACING_RAD,
       });
@@ -115,7 +135,7 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
 
     loop.start(
       (dt: number) => {
-        // 桌面端合并:WASD 优先级高于摇杆(移动端摇杆主导)
+        // 桌面端合并输入
         const kv = keyboard.getMoveVector();
         const merged: JoystickState =
           Math.hypot(kv.x, kv.y) > 0 ? kv : joyRef.current;
@@ -124,40 +144,39 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
         }
         gameScene.update(dt, merged);
 
-        // 同步 player/dummy 的位置到 Unit(每帧读最新)
+        // 同步 player position 到 Unit(controller 改写了 visual.root.position)
         playerUnit.position.x = gameScene.player.root.position.x;
         playerUnit.position.z = gameScene.player.root.position.z;
-        dummyUnit.position.x = gameScene.dummy.root.position.x;
-        dummyUnit.position.z = gameScene.dummy.root.position.z;
-
-        // 读 controller 设的 facing(如果 controller 暴露了接口;否则用 0)
-        // proposal v2:player-controller 暂未导出 facing;fallback 用 last known
-        // 简单做法:activeSkill forward 用 facingRadRef;初始 0(玩家朝 -Z)
-        // 这里不读 controller 的 facing,沿用 onKeyDown 时的 forwardRad 已够调试
+        // dummy 位置固定,不需要同步(但保留以防未来 dummy 移动)
 
         // 推进 active skill
         const active = activeSkillRef.current;
         if (active && active.phase !== 'done') {
           active.tick(dt, { caster: playerUnit, world, now: 0 });
-          // tick 后 phase 可能是 done;用 ref 重读
           if (activeSkillRef.current?.phase === 'done') {
-            // 命中结算:把 damage 扣到 dummy
-            applyDamage([dummyUnit], active.damage);
-            if (active.damage.length > 0) {
-              gameScene.dummy.setRingPulse(1); // dummy 闪烁反馈
+            // 命中结算
+            const results = active.damage;
+            applyDamage([dummyUnit, playerUnit], results);
+            world.notifyDamage(results);
+            if (results.length > 0) {
+              gameScene.dummy.setRingPulse(1);
+            }
+            // dash:把 Unit 位置写回 visual
+            if (active.skill.displacement === 'dash') {
+              gameScene.player.setPosition(
+                playerUnit.position.x,
+                0,
+                playerUnit.position.z,
+              );
             }
           }
+        } else if (active && active.phase === 'done') {
+          // 推进完后自然 done → 释放引用
+          activeSkillRef.current = null;
         }
 
-        // dash:playerUnit.position 已被 applyDash 改写,写回 visual
-        if (active && active.skill.displacement === 'dash' && active.phase === 'recovery') {
-          // 一次性突进:applyDash 在 active 起始已经执行;这里做兜底
-          gameScene.player.setPosition(
-            playerUnit.position.x,
-            0,
-            playerUnit.position.z,
-          );
-        }
+        // 飘字推进
+        floaters.update(dt);
       },
       () => {
         renderer.render(gameScene.scene, gameScene.follow.camera);
@@ -170,9 +189,14 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
       window.removeEventListener('keydown', onKeyDown);
       canvas.removeEventListener('click', onCanvasClick as unknown as EventListener);
       keyboard.dispose();
+      unsubscribeDamage();
+      floaters.dispose();
+      gameScene.scene.remove(floaters.group);
       gameScene.dispose();
       renderer.dispose();
       sceneRef.current = null;
+      playerRef.current = null;
+      dummyRef.current = null;
     };
   }, [sceneRef]);
 
@@ -192,6 +216,8 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
           cursor: mobile ? 'default' : 'crosshair',
         }}
       />
+      <HpBar unitRef={playerRef} label={ARTHUR_DATA.displayName} />
+      <DummyHpBar unitRef={dummyRef} />
       {mobile && (
         <MobileControls
           joystickRef={joyRef}
