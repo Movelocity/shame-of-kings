@@ -223,7 +223,11 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         {item.upgrade && <span className="skill-orb__upgrade">+</span>}
         {isCooling && (
           <span className="skill-orb__cooldown">
-            {cdRemaining > 0 ? cdRemaining.toFixed(1) : '·'}
+            {cdRemaining > 0
+              ? cdRemaining >= 1
+                ? Math.ceil(cdRemaining).toString()
+                : cdRemaining.toFixed(1)
+              : '·'}
           </span>
         )}
       </button>
