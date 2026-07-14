@@ -26,9 +26,14 @@ import { createWorldHpBars } from '../../game/world/WorldHpBars';
 
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
+  /** 重置信号:每次 .current 变化触发一次世界重置(回出生点 + dummy 满血 + 清空 activeSkill) */
+  resetSignal?: React.MutableRefObject<number>;
 }
 
-export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {}): JSX.Element {
+export function GameCanvas({
+  sceneRef: externalSceneRef,
+  resetSignal,
+}: GameCanvasProps = {}): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const localSceneRef = useRef<GameSceneHandle | null>(null);
   const sceneRef = externalSceneRef ?? localSceneRef;
@@ -63,6 +68,18 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
       height: window.innerHeight,
     });
     sceneRef.current = gameScene;
+
+    // T25:注入 resetWorld 闭包(DebugOverlay 的"重置"按钮通过 resetSignal 调到这里)
+    gameScene.resetWorld = () => {
+      // 1. 玩家回出生点(controller.reset 走 player-controller)
+      gameScene.reset();
+      // 2. dummy 满血
+      dummyUnit.hp = dummyUnit.hpMax;
+      // 3. 清空 activeSkill(避免中途的技能继续推进)
+      activeSkillRef.current = null;
+      // 4. dummy setRingPulse(0) 关闭残留闪烁
+      gameScene.dummy.setRingPulse(0);
+    };
 
     // M3 T3.3:WorldState 替换 M2 DebugWorld
     const playerUnit: Unit = asUnit(gameScene.player, 'player', ARTHUR_DATA.stats.hpMax, false);
@@ -195,6 +212,17 @@ export function GameCanvas({ sceneRef: externalSceneRef }: GameCanvasProps = {})
       sceneRef.current = null;
     };
   }, [sceneRef]);
+
+  // T25:监听 resetSignal 触发 resetWorld 闭包
+  useEffect(() => {
+    if (!resetSignal) return;
+    const current = resetSignal.current;
+    if (current === 0) return; // 初始 0 不触发
+    const scene = sceneRef.current;
+    scene?.resetWorld?.();
+    // 故意不写 effect deps,只读 current 一次;counter 由 App 维护
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal?.current]);
 
   const mobile = typeof navigator !== 'undefined' && isMobileUA();
 

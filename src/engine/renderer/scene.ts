@@ -26,8 +26,15 @@ export interface GameSceneHandle {
   controller: PlayerControllerHandle;
   /** 每帧调用:由外部喂入摇杆状态 */
   update(dt: number, joystick: JoystickState): void;
-  /** 重置玩家回出生点 */
+  /** 重置玩家回出生点(仅 controller 状态) */
   reset(): void;
+  /**
+   * 重置整个世界(回出生点 + dummy 满血 + 清空技能)。
+   * 由 GameCanvas 注入闭包实现;不实现则 undefined。
+   * 2026-07-14:T25 把重置按钮挪到 DebugOverlay 后,DebugOverlay 通过 App→PlayPage→GameCanvas
+   * 的 resetSignal 间接调到这里。
+   */
+  resetWorld?: () => void;
   dispose(): void;
 }
 
