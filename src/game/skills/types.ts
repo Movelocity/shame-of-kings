@@ -42,6 +42,8 @@ export interface Unit {
   hp: number;
   hpMax: number;
   isStatic: boolean; // 木人桩 / 防御塔为 true
+  /** 朝向(世界 -Z = 0,逆时针为正)。M3 阶段默认 0;M5 元歌/M6 镜复用为指向性技能 forwardRad 来源。 */
+  facingRad: number;
   hidden: HiddenState;
 }
 
@@ -110,10 +112,17 @@ export interface Skill {
   readonly activeTime: number;
   /** 后摇(秒) */
   readonly recoveryTime: number;
-  /** 冷却(秒);前摇开始时立即入 CD */
+  /** 冷却(秒);前摇开始时立即入 CD,cooldownTimer > 0 时不允许再次施法 */
   readonly cooldown: number;
   /** 位移距离(世界单位);'none' 时忽略 */
   readonly dashDistance: number;
+  /**
+   * 施法模式(2026-07-14 KI-4 引入):
+   *  - 'instant':   按下即施(默认,兼容 M3 现有 4 技能)
+   *  - 'targeted':  移动端"瞄准-释放";按下进入瞄准中态,松开在非取消区才算释放;桌面端
+   *                 维持鼠标点击寻路后再触发。M5 元歌(M5A.1)与 M6 镜(M5B.1)会切到 targeted。
+   */
+  readonly castMode: 'instant' | 'targeted';
   /** 伤害公式;undefined = 无伤害(如纯位移) */
   readonly damage?: DamageFormula;
 }

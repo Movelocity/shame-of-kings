@@ -17,6 +17,7 @@ export function createPracticeDummy(): Unit {
     hp: PRACTICE_DUMMY_HP_MAX,
     hpMax: PRACTICE_DUMMY_HP_MAX,
     isStatic: true,
+    facingRad: 0, // 永远静止,朝向不参与计算;占位即可
     hidden: { inBush: false, outOfVisionFrom: new Set<string>() },
   };
 }

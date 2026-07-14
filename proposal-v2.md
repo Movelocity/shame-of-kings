@@ -217,3 +217,16 @@ pnpm dev                   # 本地调试
 ## 10. 一句话总结
 
 **先把 §3 闸口（coords + Skill 非英雄施法者）落地，再做 M2 技能框架和 M3 亚瑟；M4 真机验收通过后，元歌/镜/MOBA 地图三条线并行推进，按里程碑批量交付真机验收。**
+
+## 11. 待解决问题清单(2026-07-14 反思时登记)
+
+> M3 退出门 commit 之后做了一次架构反思,在 `MEMORY.md §Known issues · 2026-07-14 三件待修` 详述。本节只挂在提案上做"对外可见"的口径。
+
+| ID | 现象 | 影响 | 处置时间窗 | 修法概要 |
+|---|---|---|---|---|
+| KI-1 | `cooldownTimer` 字段写但未消费,玩家可无限连点 1/2/3 | 圣裁/普攻 CD 失效,DPS 失控 | **M4 验收批 1 之前必须修** | onKeyDown 入口查 `cooldownTimer > 0` 拦截;tick 末尾减 `cooldownTimer`;done transition 清零 |
+| KI-2 | DebugOverlay 重置链路跨 5 跳,任一跳空都"看起来啥也没发生" | M4 验收批 1 第一次按"重置"会失败 | **M4 验收批 1 之前必须手测** | 当前不重构链路,作为"必须手测"项收口;长期可改成 GameSceneHandle 自带 resetWorld + 事件总线 |
+| KI-3 | `Unit` 类型无 `facingRad`,GameCanvas 写死 `FACING_RAD = 0` | M5 元歌 23 连 / 镜飞雷神会被迫改 engine 接口 | **M4 退出门之前预防性加字段** | `Unit` 加 `facingRad: number`(默认 0);`player-controller` 在 update 末尾写入;GameCanvas tick 同步到 `playerUnit.facingRad` |
+| KI-4 | 缺"指向性 vs 非指向性"技能分类 | 元歌/镜开工时无处落"瞄准-释放"语义 | **T3 阶段先写契约 + 兼容 default 'instant'**;M5 落地 `castMode: 'targeted'` UI | `Skill.castMode: 'instant' \| 'targeted'` 写进 `types.ts`;debug-skills + arthur.json 标 `instant`(兼容);M4 维持 instant-only 行为 |
+
+> 决策(2026-07-14):先开工 KI-1 + KI-4 契约(后者 T3 末尾落地骨架,数据填 instant 占位)。KI-2 手测。KI-3 留到 T3 完成后下一刀。

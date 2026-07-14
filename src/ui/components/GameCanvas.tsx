@@ -6,7 +6,7 @@
 // M3 T3.5:用 WorldState 替换 M2 临时 DebugWorld;DamageFloaters 走 Three.js Sprite;
 // 1/2/3 键触发亚瑟 3 个主动技能,0 键普攻
 // T19:血条挂到角色头上(Sprite + CanvasTexture,billboard 自动面向相机)
-import { useCallback, useEffect, useRef, type JSX, type MouseEvent as ReactMouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react';
 import { Raycaster, Vector2, Vector3, WebGLRenderer } from 'three';
 import { REQUIRED_SHADOW_MAP } from '../../engine/renderer/lights';
 import { createGameScene, type GameSceneHandle } from '../../engine/renderer/scene';
@@ -16,13 +16,14 @@ import { createKeyboardMove } from '../../engine/input/keyboard-move';
 import { isMobileUA } from '../../platform/isMobileUA';
 import { MobileControls } from './MobileControls';
 import { applyDamage, startSkill } from '../../game/skills/runtime';
-import type { SkillInstance, Unit } from '../../game/skills/types';
+import type { Skill, SkillInstance, Unit } from '../../game/skills/types';
 import { asUnit } from '../../game/skills/debug-skills/DebugWorld';
 import { arthurSkillByHotkey, ARTHUR_DATA } from '../../game/heroes/arthur';
 import { createPracticeDummy } from '../../game/units/practice-dummy';
 import { createWorldState } from '../../game/world/WorldState';
 import { DamageFloaters } from '../../game/world/DamageFloaters';
 import { createWorldHpBars, FACTION_COLORS } from '../../game/world/WorldHpBars';
+import { SkillHud, type SkillHudHandle } from './SkillHud';
 
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
@@ -34,11 +35,85 @@ export function GameCanvas({
   sceneRef: externalSceneRef,
   resetSignal,
 }: GameCanvasProps = {}): JSX.Element {
+  const skillHudRef = useRef<SkillHudHandle | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const localSceneRef = useRef<GameSceneHandle | null>(null);
   const sceneRef = externalSceneRef ?? localSceneRef;
   const joyRef = useRef<JoystickState>(ZERO_JOYSTICK);
   const isMobile = useRef<boolean>(false);
+  // T4 KI-4 移动端"瞄准中"状态:React state 仅用于驱动 .skill-hud__cancel.is-aiming
+  // 视觉切换(不新建浮层,沿用 M3 .skill-hud__cancel 区域)
+  const [aiming, setAiming] = useState<{ hotkey: string; skill: Skill } | null>(null);
+  // 双写:state 触发 render,ref 供外层回调同步读最新值
+  const aimStateRef = useRef<{ hotkey: string; skill: Skill } | null>(null);
+  aimStateRef.current = aiming;
+  // 把 activeSkillRef / playerUnit 提升为组件级 useRef,
+  // 让外层 onMobilePressStart / onMobilePressEnd 也能读到 (而不是 useEffect 闭包内的局部变量)
+  const activeSkillRef = useRef<SkillInstance | null>(null);
+  const playerUnitRef = useRef<Unit | null>(null);
+  const tryStartSkillByHotkey = (hotkey: string): void => {
+    const cur = activeSkillRef.current;
+    if (cur && (cur.phase !== 'done' || cur.cooldownTimer > 0)) return;
+    const skill = arthurSkillByHotkey(hotkey);
+    const pu = playerUnitRef.current;
+    if (!skill || !pu) return;
+    activeSkillRef.current = startSkill(skill, pu, { forwardRad: pu.facingRad });
+  };
+  const cancelAiming = (): void => {
+    setAiming(null);
+  };
+  // 判定 (clientX, clientY) 是否落在 .skill-hud__cancel DOMRect 内
+  // (沿用 M3 已锁的取消区,不另建浮层)
+  function isInsideCancelRect(clientX: number, clientY: number): boolean {
+    const el = document.querySelector('.skill-hud__cancel');
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return (
+      clientX >= r.left &&
+      clientX <= r.right &&
+      clientY >= r.top &&
+      clientY <= r.bottom
+    );
+  }
+  const commitAimingFromPointer = (clientX: number, clientY: number, inside: boolean): void => {
+    const cur = aimStateRef.current;
+    if (!cur) return;
+    // 抬起点在 .skill-hud__cancel 内 → 视为取消;否则 → 释放
+    if (!inside || isInsideCancelRect(clientX, clientY)) {
+      setAiming(null);
+      return;
+    }
+    tryStartSkillByHotkey(cur.hotkey);
+    setAiming(null);
+  };
+  const onMobilePressStart = (hotkey: string): void => {
+    if (!isMobile.current) return;
+    const skill = arthurSkillByHotkey(hotkey);
+    if (!skill) return;
+    const cur = activeSkillRef.current;
+    if (cur && (cur.phase !== 'done' || cur.cooldownTimer > 0)) return;
+    if (skill.castMode === 'targeted') {
+      setAiming({ hotkey, skill });
+    } else {
+      tryStartSkillByHotkey(hotkey);
+    }
+  };
+  const onMobilePressEnd = (info: {
+    hotkey: string;
+    clientX: number;
+    clientY: number;
+    inside: boolean;
+  }): void => {
+    if (!isMobile.current) return;
+    if (!info.inside) {
+      // 手指 / 鼠标滑出按钮 → 视为 cancel
+      cancelAiming();
+      return;
+    }
+    if (aimStateRef.current) {
+      commitAimingFromPointer(info.clientX, info.clientY, true);
+    }
+  };
 
   const handleSetCameraOffset = useCallback(
     (x: number, z: number) => {
@@ -75,15 +150,25 @@ export function GameCanvas({
       gameScene.reset();
       // 2. dummy 满血
       dummyUnit.hp = dummyUnit.hpMax;
-      // 3. 清空 activeSkill(避免中途的技能继续推进)
+      // 3. 清空 activeSkill(避免中途的技能继续推进;CD 也要清,否则锁住后续施法)
+      const active = activeSkillRef.current;
+      if (active) {
+        active.cancel();
+        active.cooldownTimer = 0;
+      }
       activeSkillRef.current = null;
       // 4. dummy setRingPulse(0) 关闭残留闪烁
       gameScene.dummy.setRingPulse(0);
+      // 5. T4:清掉瞄准中态(玩家在 targeted 技能按住时按"重置",应一起清)
+      setAiming(null);
     };
 
     // M3 T3.3:WorldState 替换 M2 DebugWorld
     const playerUnit: Unit = asUnit(gameScene.player, 'player', ARTHUR_DATA.stats.hpMax, false);
     const dummyUnit: Unit = createPracticeDummy();
+    // 把 playerUnit / activeSkillRef 写入组件级 ref,
+    // 让外层 onMobilePressStart / onMobilePressEnd 也能访问
+    playerUnitRef.current = playerUnit;
     const world = createWorldState({ units: [playerUnit, dummyUnit] });
 
     // T19:世界空间血条(billboard 跟随单位)
@@ -105,9 +190,15 @@ export function GameCanvas({
       }
     });
 
-    const activeSkillRef = { current: null as SkillInstance | null };
-    // 朝向:由 controller 在 update 里设;M3 阶段先用 0(玩家朝 -Z)
-    const FACING_RAD = 0;
+    // KI-3 预防:playerUnit.facingRad 由 controller 在每帧 update 末尾写入;
+    // 技能 forwardRad 直接读 playerUnit.facingRad,这样元歌 23 连 / 镜飞雷神
+    // 拿到的是"实时朝向",而不是写死的 0。
+
+    // window 端 pointerup / pointercancel 兜底:
+    // 瞄准中态兜底:
+    //  - .skill-orb 走 onPointerUp 触发 cancel / 释放
+    //  - .skill-hud__cancel 走自己的 onPointerUp(M3 区域)直接 cancel
+    //  - 系统级 pointercancel / 切后台:用 aimStateRef 在 resetWorld + 自身 cleanup 中清
 
     function onResize(): void {
       const w = window.innerWidth;
@@ -136,13 +227,15 @@ export function GameCanvas({
     canvas.addEventListener('click', onCanvasClick as unknown as EventListener);
 
     // 1/2/3 键触发亚瑟 3 个主动技能;0 普攻
+    // KI-1 修法:入口处先查 cooldownTimer,未到 0 直接拦截(M3 之前只看 phase,允许无限连点)
     function onKeyDown(e: KeyboardEvent): void {
       if (!['1', '2', '3', '0'].includes(e.key)) return;
-      if (activeSkillRef.current && activeSkillRef.current.phase !== 'done') return;
+      const active = activeSkillRef.current;
+      if (active && (active.phase !== 'done' || active.cooldownTimer > 0)) return;
       const skill = arthurSkillByHotkey(e.key);
       if (!skill) return;
       activeSkillRef.current = startSkill(skill, playerUnit, {
-        forwardRad: FACING_RAD,
+        forwardRad: playerUnit.facingRad,
       });
     }
     window.addEventListener('keydown', onKeyDown);
@@ -159,9 +252,10 @@ export function GameCanvas({
         }
         gameScene.update(dt, merged);
 
-        // 同步 player position 到 Unit
+        // 同步 player position + facing 到 Unit(KI-3:实时朝向给元歌/镜用)
         playerUnit.position.x = gameScene.player.root.position.x;
         playerUnit.position.z = gameScene.player.root.position.z;
+        playerUnit.facingRad = gameScene.controller.facingRad;
 
         // 推进 active skill
         const active = activeSkillRef.current;
@@ -182,8 +276,28 @@ export function GameCanvas({
               );
             }
           }
-        } else if (active && active.phase === 'done') {
+        } else if (active && active.phase === 'done' && active.cooldownTimer <= 0) {
           activeSkillRef.current = null;
+        }
+
+        // KI-1:每帧把 4 技能的 cooldownTimer / locked 写到 SkillHud HUD
+        // (M3 阶段热键 0/1/2/3 → 4 个技能,固定写入)
+        const hud = skillHudRef.current;
+        if (hud) {
+          for (const hotkey of ['0', '1', '2', '3'] as const) {
+            const sk = arthurSkillByHotkey(hotkey);
+            if (!sk) continue;
+            const cur = activeSkillRef.current;
+            const isThisActive =
+              cur !== null && cur.phase !== 'done' && cur.skill.id === sk.id;
+            hud.updateButton(hotkey, {
+              name: sk.displayName,
+              hotkey,
+              cooldownRemaining: isThisActive ? cur.cooldownTimer : 0,
+              cooldownMax: sk.cooldown,
+              locked: isThisActive && cur.phase !== 'recovery',
+            });
+          }
         }
 
         // 飘字推进
@@ -246,6 +360,14 @@ export function GameCanvas({
           setCameraOffset={handleSetCameraOffset}
         />
       )}
+      {/* T4 KI-4:技能栏 + 瞄准中(沿用 M3 .skill-hud__cancel 区域,
+          aimingHotkey 非空时该区域加 .is-aiming class) */}
+      <SkillHud
+        ref={skillHudRef}
+        onPressStart={onMobilePressStart}
+        onPressEnd={onMobilePressEnd}
+        aimingHotkey={aiming?.hotkey ?? null}
+      />
     </>
   );
 }

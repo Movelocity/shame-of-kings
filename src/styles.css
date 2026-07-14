@@ -125,7 +125,14 @@ body,
   cursor: pointer;
   pointer-events: auto;
   touch-action: none;
+  /* 去除浏览器原生气泡焦点环(<button> 默认 outline + 移动 webkit tap-highlight)
+     保留 M3 圆形视觉;无障碍 keyboard focus 仍由 :focus-visible 默认 outline 负责。*/
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
+.skill-orb:focus { outline: none; }
+.skill-orb:focus-visible { outline: none; }
+.skill-orb:active { outline: none; }
 
 .skill-orb--attack {
   background:
@@ -222,4 +229,19 @@ body,
     transform: scale(0.86);
     transform-origin: right bottom;
   }
+}
+
+/* T4 KI-4:瞄准中态 .skill-hud__cancel 激活态
+   M3 区域是"取消"按钮位置;targeted 技能按下时进入瞄准中,
+   玩家在此区抬起即视为取消。激活态仅做轻微亮度提示,
+   不破坏 M3 视觉(底色 / 边框 / 形状保持不变)。*/
+.skill-hud__cancel.is-aiming {
+  background: rgba(255, 90, 90, 0.85);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 117, 126, 0.5), 0 10px 28px rgba(51, 5, 11, 0.42);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.skill-hud__cancel.is-aiming:hover {
+  background: rgba(255, 110, 110, 0.95);
 }

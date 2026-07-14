@@ -53,6 +53,9 @@ export function startSkill(
       inst.elapsed = 0;
     },
     tick(dt: number, ctx: SkillContext) {
+      // KI-1:cooldownTimer 跨 done 后仍持续减 dt,直到 ≤ 0 时由 caller 解除施法拦截
+      // (见 GameCanvas.onKeyDown)。必须放在 done 早返之前,否则 done 之后 CD 永远卡住。
+      if (inst.cooldownTimer > 0) inst.cooldownTimer = Math.max(0, inst.cooldownTimer - dt);
       if (inst.phase === 'done') return inst.damage;
       inst.elapsed += dt;
       // 每阶段持续时间到 → 推进到下一阶段
@@ -141,6 +144,8 @@ export function makeSkill(partial: {
   cooldown: number;
   dashDistance?: number;
   damage?: Skill['damage'];
+  /** 缺省 'instant',兼容 M3 现有 4 技能与 debug-skills */
+  castMode?: Skill['castMode'];
 }): Skill {
   return {
     id: partial.id,
@@ -153,5 +158,6 @@ export function makeSkill(partial: {
     cooldown: partial.cooldown,
     dashDistance: partial.dashDistance ?? 0,
     damage: partial.damage,
+    castMode: partial.castMode ?? 'instant',
   };
 }

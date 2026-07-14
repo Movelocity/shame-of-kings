@@ -11,6 +11,7 @@ function mkUnit(id: string, x: number, z: number): Unit {
     hp: 100,
     hpMax: 100,
     isStatic: true,
+    facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
   };
 }

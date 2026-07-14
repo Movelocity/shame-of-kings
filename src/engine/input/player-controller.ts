@@ -25,6 +25,12 @@ export interface PlayerControllerHandle {
   setMoveTarget(target: { x: number; z: number } | null): void;
   /** 重置玩家(初始位置 + 朝向)。同时清空点击目标 */
   reset(player: EntityVisualHandle, arena: ArenaHandle): void;
+  /**
+   * 当前朝向(世界 -Z = 0,逆时针为正)。KI-3:为元歌/镜的指向性技能 forwardRad 提供
+   * 实时读数,只读 getter,不影响现有 update/reset/setMoveTarget 三个写接口。
+   * 初始 0(朝 -Z);update 期间由 atan2(vx, -vz) 写入;reset 写回 0。
+   */
+  readonly facingRad: number;
 }
 
 /** 出生点 = (0, 0, +arenaHalf - 4):玩家在场地 +Z 侧,面朝地图深处 -Z */
@@ -40,6 +46,8 @@ export function createPlayerController(
   // 鼠标点击寻路的目标点(world x,z)。有目标时,优先级低于摇杆;
   // 玩家主动拨摇杆的瞬间会清除目标。null = 无目标。
   let moveTarget: { x: number; z: number } | null = null;
+  // 当前朝向(世界 -Z = 0)。KI-3:为指向性技能 forwardRad 提供 getter。
+  let _facingRad = 0;
 
   function clampToArena(
     x: number,
@@ -101,7 +109,9 @@ export function createPlayerController(
     //   (vx>0,vz=0)=+π/2(逆时针 +X, 屏幕右)、(vx<0,vz=0)=-π/2(逆时针 -X, 屏幕左)。
     // entity-visuals.setFacingRad 用这个 r 配合 indicator.rotation.y = π - r 把三角形
     // 几何尖端转到玩家前进方向。
-    player.setFacingRad(Math.atan2(vx, -vz));
+    const facing = Math.atan2(vx, -vz);
+    _facingRad = facing;
+    player.setFacingRad(facing);
   }
 
   function setMoveTarget(target: { x: number; z: number } | null): void {
@@ -112,8 +122,16 @@ export function createPlayerController(
     const spawn = defaultSpawn(arena.halfExtent);
     player.setPosition(spawn.x, c.fixedY, spawn.z);
     player.setFacingRad(0); // 朝地图深处(-Z)
+    _facingRad = 0;
     moveTarget = null;
   }
 
-  return { update, setMoveTarget, reset };
+  return {
+    update,
+    setMoveTarget,
+    reset,
+    get facingRad(): number {
+      return _facingRad;
+    },
+  };
 }

@@ -22,6 +22,7 @@ export function asUnit(
     hp,
     hpMax: hp,
     isStatic,
+    facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set<string>() },
   };
 }
