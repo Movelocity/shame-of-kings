@@ -196,6 +196,8 @@ pnpm dev
 | 文件 | 角色 |
 |---|---|
 | **`docs/DEV.md`** | **当前开发顺序与任务（本文件）** |
+| `openspec/project.md` | OpenSpec 上下文；`openspec/changes/` 为变更提案，`openspec/specs/` 为已归档能力真相 |
+| `openspec/changes/short-term-project-hygiene/` | 短期保健（清债 / session 收口 / 验证仪式）；与本文件 T36.3–T36.5、T36.2 对齐 |
 | `archives/proposal.md` | MVP 定义、架构原则、DoD 原文、技能机制表 |
 | `archives/proposal-v2.md` | 历史：闸口 + 并行里程碑（已归档，勿按此排期） |
 | `map-design.md` | P2 地图 agent 规格 |

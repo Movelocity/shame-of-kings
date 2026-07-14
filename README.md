@@ -27,10 +27,12 @@ pnpm typecheck      # tsc -b
 | 文档 | 用途 |
 |---|---|
 | **[`docs/DEV.md`](./docs/DEV.md)** | **当前生效：优先级、任务顺序、M4 退出门** |
+| [`openspec/project.md`](./openspec/project.md) | OpenSpec 项目上下文；变更提案与能力规格入口 |
 | [`archives/proposal.md`](./archives/proposal.md) | MVP 范围、DoD 原文、架构原则、技能机制表 |
 | [`archives/proposal-v2.md`](./archives/proposal-v2.md) | 已归档的并行演进提案（勿按此排期） |
 | [`map-design.md`](./map-design.md) | P2 三路地图规格（M4 退出前不实施） |
 
+当前 active change：[`openspec/changes/short-term-project-hygiene/`](./openspec/changes/short-term-project-hygiene/)（短期保健）。  
 新增架构决策前请先读 `docs/DEV.md` 与 `archives/proposal.md` §2。  
 **M4 退出门之前**：不引入新依赖、不写元歌/镜/MOBA 地图代码、不大改 `src/engine/` 核心接口（碰撞/重置所需除外）。
 
