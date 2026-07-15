@@ -1,0 +1,75 @@
+// practice-session:reset 不变量 + 热键 cast 可启动 instance
+import { describe, expect, it } from 'vitest';
+import { ARTHUR_DATA } from '../../src/game/heroes/arthur';
+import { createPracticeDummy } from '../../src/game/units/practice-dummy';
+import { createPracticeSession } from '../../src/game/world/practice-session';
+import type { Unit } from '../../src/game/skills/types';
+
+function makePlayer(spawn = { x: 2, z: 10 }): Unit {
+  return {
+    id: 'player',
+    team: 'blue',
+    position: { x: spawn.x, z: spawn.z },
+    hp: ARTHUR_DATA.stats.hpMax,
+    hpMax: ARTHUR_DATA.stats.hpMax,
+    isStatic: false,
+    facingRad: 0.5,
+    hidden: { inBush: false, outOfVisionFrom: new Set<string>() },
+  };
+}
+
+describe('createPracticeSession', () => {
+  it('resetWorld 恢复满血、清 CD/buff/普攻意图', () => {
+    const player = makePlayer();
+    const dummy = createPracticeDummy();
+    const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
+
+    dummy.hp = 400;
+    session.tryCastHotkey('1');
+    expect(session.skillBook.active).not.toBeNull();
+    session.buffs.apply({
+      id: 'ms',
+      kind: 'moveSpeed',
+      value: 0.4,
+      duration: 3,
+    });
+    session.requestAutoAttack();
+    expect(session.buffs.active.length).toBeGreaterThan(0);
+
+    session.resetWorld();
+
+    expect(dummy.hp).toBe(dummy.hpMax);
+    expect(session.skillBook.active).toBeNull();
+    expect(session.buffs.active).toHaveLength(0);
+    expect(session.buffs.moveSpeedMultiplier()).toBe(1);
+  });
+
+  it('tryCastHotkey 在 CD 允许时启动 SkillInstance', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer() });
+
+    const started = session.tryCastHotkey('1');
+    expect(started).toBe(true);
+    expect(session.skillBook.active).not.toBeNull();
+    expect(session.skillBook.active?.skill.id).toBe('shield-of-pact');
+  });
+
+  it('postTick 在固定 dt 下可推进技能阶段', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer() });
+    session.tryCastHotkey('1');
+
+    session.preTick({
+      dt: 1 / 60,
+      manualMove: false,
+      playerX: 2,
+      playerZ: 10,
+    });
+    session.postTick({
+      dt: 1 / 60,
+      playerX: 2,
+      playerZ: 10,
+      facingRad: 0,
+    });
+
+    expect(session.skillBook.active?.phase).not.toBe('done');
+  });
+});

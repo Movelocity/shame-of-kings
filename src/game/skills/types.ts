@@ -106,7 +106,7 @@ export interface WorldLike {
   canSee(observer: Unit | TowerUnit, target: Unit): boolean;
 }
 
-/** 技能定义(数据驱动;具体技能在 heroes/ 或 debug-skills/ 下) */
+/** 技能定义(数据驱动;具体技能在 heroes/ 下) */
 export interface Skill {
   readonly id: string;
   readonly displayName: string;

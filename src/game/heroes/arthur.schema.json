@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ArthurHeroData",
+  "type": "object",
+  "required": ["id", "displayName", "stats", "passive", "skills"],
+  "properties": {
+    "id": { "type": "string" },
+    "displayName": { "type": "string" },
+    "stats": {
+      "type": "object",
+      "required": ["hpMax", "attackDamage", "moveSpeed"],
+      "properties": {
+        "hpMax": { "type": "number" },
+        "attackDamage": { "type": "number" },
+        "moveSpeed": { "type": "number" }
+      }
+    },
+    "passive": { "type": "object" },
+    "skills": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  }
+}

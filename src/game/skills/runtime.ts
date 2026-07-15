@@ -137,7 +137,7 @@ export function applyDamage(units: Iterable<Unit>, results: readonly DamageResul
   }
 }
 
-/** 工厂:辅助方法,提供给 debug-skills / 亚瑟装载用 */
+/** 工厂:辅助方法,提供给英雄装载用 */
 export function makeSkill(partial: {
   id: string;
   displayName: string;
@@ -149,7 +149,7 @@ export function makeSkill(partial: {
   cooldown: number;
   dashDistance?: number;
   damage?: Skill['damage'];
-  /** 缺省 'instant',兼容 M3 现有 4 技能与 debug-skills */
+  /** 缺省 'instant',兼容 M3 现有 4 技能 */
   castMode?: Skill['castMode'];
   onActivate?: Skill['onActivate'];
 }): Skill {
