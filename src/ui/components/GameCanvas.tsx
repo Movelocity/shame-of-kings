@@ -38,13 +38,10 @@ const ARTHUR_CAST_MODES: Readonly<Record<string, Skill['castMode']>> =
 
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
-  /** 重置信号:每次 .current 变化触发一次世界重置(回出生点 + dummy 满血 + 清空 activeSkill) */
-  resetSignal?: React.MutableRefObject<number>;
 }
 
 export function GameCanvas({
   sceneRef: externalSceneRef,
-  resetSignal,
 }: GameCanvasProps = {}): JSX.Element {
   const skillHudRef = useRef<SkillHudHandle | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -321,15 +318,6 @@ export function GameCanvas({
       sceneRef.current = null;
     };
   }, [sceneRef]);
-
-  useEffect(() => {
-    if (!resetSignal) return;
-    const current = resetSignal.current;
-    if (current === 0) return;
-    const scene = sceneRef.current;
-    scene?.resetWorld?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetSignal?.current]);
 
   const mobile = typeof navigator !== 'undefined' && isMobileUA();
 

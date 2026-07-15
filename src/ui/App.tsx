@@ -9,7 +9,7 @@
 //   4. 确认离开 → screen.orientation.unlock() + exitFullscreen() → 回 home
 //   5. 回 home 后不再限制横竖屏(无遮罩、无监听)
 // 桌面端:跳过 home 直接 play;不挂 popstate 监听(无系统返回键拦截意义)
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useState, type JSX } from 'react';
 import { isMobileUA } from '../platform/isMobileUA';
 import { HomePage } from './pages/HomePage';
 import { PlayPage } from './pages/PlayPage';
@@ -30,10 +30,6 @@ export function App(): JSX.Element {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState<boolean>(false);
 
   const isMobile = isMobileUA();
-
-  // T25:resetSignal ref;DebugOverlay onReset 触发 current += 1
-  // GameCanvas 内 useEffect 监听 .current 变化调 scene.resetWorld()
-  const resetSignal = useRef<number>(0);
 
   // 监听竖/横屏切换(只在移动端 play 阶段生效;home 不限制)
   useEffect(() => {
@@ -136,7 +132,7 @@ export function App(): JSX.Element {
 
   return (
     <>
-      <PlayPage resetSignal={resetSignal} />
+      <PlayPage />
       {showLeaveConfirm && (
         <LeaveConfirmDialog onConfirm={handleConfirmLeave} onCancel={handleCancelLeave} />
       )}

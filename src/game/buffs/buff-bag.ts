@@ -110,17 +110,30 @@ export function applyShieldOfPactStyle(
   },
 ): void {
   const { sourceId, moveSpeedBoost, nextAttackBonus, duration } = opts;
-  bag.apply({
-    id: `${sourceId}:moveSpeed`,
-    kind: 'moveSpeed',
-    value: moveSpeedBoost,
-    duration,
-  });
+  applyMoveSpeedBuff(bag, { sourceId, moveSpeedBoost, duration });
   bag.apply({
     id: `${sourceId}:nextAttack`,
     kind: 'nextAttackBonus',
     value: nextAttackBonus,
     duration,
     consumeOnAttack: true,
+  });
+}
+
+/** 仅移速 buff(契约之盾新语义:无下次普攻加成) */
+export function applyMoveSpeedBuff(
+  bag: BuffBag,
+  opts: {
+    sourceId: string;
+    moveSpeedBoost: number;
+    duration: number;
+  },
+): void {
+  const { sourceId, moveSpeedBoost, duration } = opts;
+  bag.apply({
+    id: `${sourceId}:moveSpeed`,
+    kind: 'moveSpeed',
+    value: moveSpeedBoost,
+    duration,
   });
 }

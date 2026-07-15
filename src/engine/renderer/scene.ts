@@ -31,8 +31,7 @@ export interface GameSceneHandle {
   /**
    * 重置整个世界(回出生点 + dummy 满血 + 清空技能)。
    * 由 GameCanvas 注入闭包实现;不实现则 undefined。
-   * 2026-07-14:T25 把重置按钮挪到 DebugOverlay 后,DebugOverlay 通过 App→PlayPage→GameCanvas
-   * 的 resetSignal 间接调到这里。
+   * PlayPage / DebugOverlay 重置按钮通过 sceneRef 直接调到这里。
    */
   resetWorld?: () => void;
   dispose(): void;

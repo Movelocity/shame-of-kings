@@ -15,19 +15,48 @@ interface BarVisual {
   group: Group;
   bg: Sprite;
   fill: Sprite;
+  status: Sprite | null;
   bgMat: SpriteMaterial;
   fillMat: SpriteMaterial;
+  statusMat: SpriteMaterial | null;
   follow: Unit;
   offsetY: number;
   width: number;
   height: number;
   baseColor: string;
   lastFillKey: string;
+  statusVisible: boolean;
 }
 
 const TEXTURE_SIZE = 256;
 const BAR_HEIGHT_PX = 28;
 const BAR_PADDING_PX = 4;
+const STATUS_HEIGHT_PX = 22;
+const STATUS_OFFSET_Y = 0.28;
+
+const statusLabelCache = new Map<string, CanvasTexture>();
+
+function getOrCreateStatusLabel(text: string): CanvasTexture {
+  const cached = statusLabelCache.get(text);
+  if (cached) return cached;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = STATUS_HEIGHT_PX;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(255, 200, 60, 0.95)';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  }
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  tex.needsUpdate = true;
+  statusLabelCache.set(text, tex);
+  return tex;
+}
 
 export interface WorldHpBarsHandle {
   readonly group: Group;
@@ -172,14 +201,17 @@ export function createWorldHpBars(): WorldHpBarsHandle {
         group,
         bg,
         fill,
+        status: null,
         bgMat,
         fillMat,
+        statusMat: null,
         follow: unit,
         offsetY,
         width,
         height,
         baseColor: color,
         lastFillKey: color,
+        statusVisible: false,
       });
     },
 
@@ -189,6 +221,7 @@ export function createWorldHpBars(): WorldHpBarsHandle {
       root.remove(b.group);
       b.bgMat.dispose();
       b.fillMat.dispose();
+      if (b.statusMat) b.statusMat.dispose();
       bars.delete(unitId);
     },
 
@@ -197,9 +230,7 @@ export function createWorldHpBars(): WorldHpBarsHandle {
         const u = b.follow;
         b.group.position.set(u.position.x, b.offsetY, u.position.z);
         const pct = u.hpMax > 0 ? u.hp / u.hpMax : 0;
-        // scale.x 表达百分比(bg/fill 都用 left anchor + 相同 position)
         b.fill.scale.x = Math.max(0, b.width * pct);
-        // 颜色随阵营 + 血量变化(只在跨阈值时换贴图,避免每帧重设)
         const fillKey = pickFillColor(b.baseColor, pct);
         if (fillKey !== b.lastFillKey) {
           b.fillMat.map = getOrCreateFullFill(fillKey);
@@ -208,6 +239,34 @@ export function createWorldHpBars(): WorldHpBarsHandle {
         }
         b.bg.visible = u.hp > 0;
         b.fill.visible = u.hp > 0;
+
+        const showKnockup =
+          u.cc?.kind === 'knockup' && (u.cc.remaining ?? 0) > 0;
+        if (showKnockup && !b.status) {
+          const statusMat = new SpriteMaterial({
+            map: getOrCreateStatusLabel('击飞'),
+            transparent: true,
+            depthTest: false,
+            depthWrite: false,
+          });
+          const status = new Sprite(statusMat);
+          status.center.set(0.5, 0.5);
+          status.scale.set(b.width * 0.55, b.height * 1.1, 1);
+          status.position.set(0, STATUS_OFFSET_Y, 0);
+          status.renderOrder = 1000;
+          b.group.add(status);
+          b.status = status;
+          b.statusMat = statusMat;
+          b.statusVisible = true;
+        } else if (!showKnockup && b.status) {
+          b.group.remove(b.status);
+          b.statusMat?.dispose();
+          b.status = null;
+          b.statusMat = null;
+          b.statusVisible = false;
+        } else if (b.status) {
+          b.status.visible = u.hp > 0;
+        }
       }
     },
 
@@ -216,9 +275,12 @@ export function createWorldHpBars(): WorldHpBarsHandle {
         root.remove(b.group);
         b.bgMat.dispose();
         b.fillMat.dispose();
+        if (b.statusMat) b.statusMat.dispose();
       }
       for (const t of fullFillCache.values()) t.dispose();
       fullFillCache.clear();
+      for (const t of statusLabelCache.values()) t.dispose();
+      statusLabelCache.clear();
       if (bgTexture) {
         bgTexture.dispose();
         bgTexture = null;

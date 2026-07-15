@@ -12,6 +12,13 @@
 import type { BuffBag } from '../buffs/buff-bag';
 import type { Vec2 } from './vec2';
 
+/** 单位 CC 状态(击飞等);由 unit-cc 模块维护 */
+export interface UnitCc {
+  kind: 'knockup';
+  /** 剩余时长(秒) */
+  remaining: number;
+}
+
 /** 命中盒类型(proposal §5.2 锁的最小集合) */
 export type HitShape =
   | { kind: 'self' }
@@ -46,6 +53,8 @@ export interface Unit {
   /** 朝向(世界 -Z = 0,逆时针为正)。M3 阶段默认 0;M5 元歌/M6 镜复用为指向性技能 forwardRad 来源。 */
   facingRad: number;
   hidden: HiddenState;
+  /** 可选 CC 状态(击飞等);由 unit-cc 模块维护 */
+  cc?: UnitCc;
 }
 
 /**
@@ -132,10 +141,22 @@ export interface Skill {
   /** 伤害公式;undefined = 无伤害(如纯位移) */
   readonly damage?: DamageFormula;
   /**
-   * 进入 active 阶段时回调一次(T35.2:契约之盾挂移速/下次普攻 buff)。
+   * active 阶段间歇伤害间隔(秒);与 damageTicks 成对使用。
+   * 缺省 = 每 active tick 结算一次(兼容旧技能)。
+   */
+  readonly damageInterval?: number;
+  /** active 阶段间歇伤害次数;与 damageInterval 成对使用 */
+  readonly damageTicks?: number;
+  /**
+   * 进入 active 阶段时回调一次(T35.2:契约之盾挂移速 buff 等)。
    * 纯位移 / 无效果技能可缺省。
    */
   readonly onActivate?: (ctx: SkillContext) => void;
+  /**
+   * active 结束、进入 recovery 前回调(三技能落地圈 + 击飞等)。
+   * 返回本帧额外伤害结果;副作用(如 CC)由 callback 自行处理。
+   */
+  readonly onLand?: (ctx: SkillContext) => readonly DamageResult[];
 }
 
 /** 技能运行实例(由 Skill.onCast 返回,M2 T2.1 落实) */

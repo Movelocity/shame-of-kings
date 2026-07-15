@@ -40,6 +40,10 @@ export function startSkill(
 ): SkillInstance {
   const origin = opts.origin ?? caster.position;
   const forward = opts.forwardRad;
+  let damageTicksDone = 0;
+  let intervalDamageAccum = 0;
+  /** 非 interval 技能:active 内只结算一次命中 */
+  let singleHitResolved = false;
   const inst: SkillInstance = {
     skill,
     phase: 'cast',
@@ -67,6 +71,7 @@ export function startSkill(
       if (inst.phase === 'cast' && inst.elapsed >= skill.castTime) {
         inst.phase = 'active';
         inst.elapsed = 0;
+        singleHitResolved = false;
         if (skill.displacement === 'dash' && skill.dashDistance > 0) {
           applyDash(caster, inst.origin, forward, skill.dashDistance);
         }
@@ -74,16 +79,62 @@ export function startSkill(
         skill.onActivate?.(ctx);
       }
       if (inst.phase === 'active') {
-        const hits = resolveHits(ctx.world as WorldLike, caster, skill.hit, forward);
-        const results: DamageResult[] = [];
-        if (skill.damage) {
-          for (const h of hits) {
-            const r = skill.damage(ctx, h);
-            if (r) results.push(r);
+        const useInterval =
+          skill.damageInterval !== undefined &&
+          skill.damageTicks !== undefined &&
+          skill.damageInterval > 0 &&
+          skill.damageTicks > 0;
+
+        if (useInterval) {
+          inst.damage = [];
+          intervalDamageAccum += dt;
+          const results: DamageResult[] = [];
+          while (
+            damageTicksDone < skill.damageTicks! &&
+            intervalDamageAccum >= (damageTicksDone + 1) * skill.damageInterval!
+          ) {
+            const hits = resolveHits(
+              ctx.world as WorldLike,
+              caster,
+              skill.hit,
+              forward,
+            );
+            if (skill.damage) {
+              for (const h of hits) {
+                const r = skill.damage(ctx, h);
+                if (r) results.push(r);
+              }
+            }
+            damageTicksDone += 1;
           }
+          if (results.length > 0) inst.damage = results;
+        } else if (!singleHitResolved) {
+          const hits = resolveHits(
+            ctx.world as WorldLike,
+            caster,
+            skill.hit,
+            forward,
+          );
+          const results: DamageResult[] = [];
+          if (skill.damage) {
+            for (const h of hits) {
+              const r = skill.damage(ctx, h);
+              if (r) results.push(r);
+            }
+          }
+          inst.damage = results;
+          singleHitResolved = true;
+        } else {
+          inst.damage = [];
         }
-        inst.damage = results;
+
         if (inst.elapsed >= skill.activeTime) {
+          if (skill.onLand) {
+            const landResults = skill.onLand(ctx);
+            if (landResults.length > 0) {
+              inst.damage = [...inst.damage, ...landResults];
+            }
+          }
           inst.phase = 'recovery';
           inst.elapsed = 0;
         }
@@ -149,9 +200,12 @@ export function makeSkill(partial: {
   cooldown: number;
   dashDistance?: number;
   damage?: Skill['damage'];
+  damageInterval?: number;
+  damageTicks?: number;
   /** 缺省 'instant',兼容 M3 现有 4 技能 */
   castMode?: Skill['castMode'];
   onActivate?: Skill['onActivate'];
+  onLand?: Skill['onLand'];
 }): Skill {
   return {
     id: partial.id,
@@ -164,7 +218,10 @@ export function makeSkill(partial: {
     cooldown: partial.cooldown,
     dashDistance: partial.dashDistance ?? 0,
     damage: partial.damage,
+    damageInterval: partial.damageInterval,
+    damageTicks: partial.damageTicks,
     castMode: partial.castMode ?? 'instant',
     onActivate: partial.onActivate,
+    onLand: partial.onLand,
   };
 }

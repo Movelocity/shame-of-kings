@@ -1,0 +1,80 @@
+---
+description: Git commit message convention for this repository
+alwaysApply: true
+---
+
+# Git Commit 规范
+
+提交信息采用 Conventional Commits 变体，格式如下：
+
+```
+<type>(<scope>): <summary>
+
+- <gist 1>
+- <gist 2>
+```
+
+## 首行（必填）
+
+```
+<type>(<scope>): <summary>
+```
+
+- `type`：`feat` | `fix` | `docs` | `chore` | `refactor`
+- `scope`：可选，用括号包裹，表示改动范围（如 `desktop-client`、`plugin-service`、`scripts`）
+- `summary`：一句话概括本次改动的目的或结果；**必须使用中文**；祈使语气；≤ 72 字符
+
+## 语言（硬性要求）
+
+- **summary 与正文 gist 必须使用中文撰写**；禁止整句英文
+- `type`、`scope` 保持英文固定标识（如 `feat`、`desktop-client`）
+- 代码符号、文件名、API 名可保留英文（如 `boundValue.ts`、`interface.management`）
+- 反例：`fix: handle login error`、`update config`、`WIP`
+
+## 正文（可选）
+
+- 改动点 ≥ 2 个，或需要补充「为什么 / 边界 / 影响面」时，用空行分隔后写 `-` 列表
+- 每条 gist 聚焦一个独立变更点，不写实现细节堆砌；**使用中文**
+- 单点、单文件小修可省略正文，只保留首行
+
+## type 含义
+
+| type | 用途 |
+|------|------|
+| `feat` | 新功能或用户可见行为增强 |
+| `fix` | bug 修复或错误行为纠正 |
+| `docs` | 仅文档变更 |
+| `chore` | 构建、依赖、脚本、CI、配置等无产品行为变更 |
+| `refactor` | 重构；不改变外部可观察行为 |
+
+## scope 建议
+
+优先使用目录/子系统名：`desktop-client`、`plugin-service`、`codex-rs`、`plugins`、`scripts`、`ci`。
+
+跨多个 scope 的大改动：省略 scope，在正文 gist 中分别说明。
+
+## 示例
+
+```
+feat(desktop-client): 支持插件基础 URL 配置
+
+- 设置页新增 plugin base URL 输入项
+- 启动时读取并注入到插件管理请求
+```
+
+```
+fix(plugin-service): 将 interface.management 写入 release snapshot
+```
+
+```
+refactor(desktop-client): 拆分 A2UI 组件绑定逻辑
+
+- 新增 boundValue.ts 统一 literal/path 解析
+- Local 组件渲染前统一解绑
+```
+
+## 撰写原则
+
+- 首行写 **why / what**，正文写 **分点 what**；避免粘贴 diff 摘要
+- 一个 commit 只做一件事；不相关改动拆成多个 commit
+- 不要写 `WIP`、`fix stuff`、`update` 等无信息或英文首行

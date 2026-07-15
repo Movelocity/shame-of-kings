@@ -42,6 +42,7 @@ describe('createPracticeSession', () => {
     expect(session.skillBook.active).toBeNull();
     expect(session.buffs.active).toHaveLength(0);
     expect(session.buffs.moveSpeedMultiplier()).toBe(1);
+    expect(session.dummyUnit.cc).toBeUndefined();
   });
 
   it('tryCastHotkey 在 CD 允许时启动 SkillInstance', () => {
@@ -51,6 +52,34 @@ describe('createPracticeSession', () => {
     expect(started).toBe(true);
     expect(session.skillBook.active).not.toBeNull();
     expect(session.skillBook.active?.skill.id).toBe('shield-of-pact');
+  });
+
+  it('普攻一次出手在 active/recovery 多帧内只扣一次血', () => {
+    const player = makePlayer({ x: 0, z: -1.5 });
+    const dummy = createPracticeDummy();
+    const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
+    const aaDamage =
+      ARTHUR_DATA.skills.find((s) => s.id === 'auto-attack')?.effect.damage ?? 0;
+
+    session.requestAutoAttack();
+
+    const hpBefore = dummy.hp;
+    for (let i = 0; i < 20; i++) {
+      session.preTick({
+        dt: 1 / 60,
+        manualMove: false,
+        playerX: player.position.x,
+        playerZ: player.position.z,
+      });
+      session.postTick({
+        dt: 1 / 60,
+        playerX: player.position.x,
+        playerZ: player.position.z,
+        facingRad: 0,
+      });
+    }
+
+    expect(hpBefore - dummy.hp).toBe(aaDamage);
   });
 
   it('postTick 在固定 dt 下可推进技能阶段', () => {

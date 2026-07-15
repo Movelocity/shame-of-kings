@@ -7,7 +7,7 @@
 //   - 内嵌"重置"按钮(DEV 与生产路径另有屏幕中上重置按钮,均走同一 resetWorld)
 //
 // 点击穿透修复(2026-07-14 b):
-//   容器设 zIndex:30(高于 MobileControls overlay 的 25,canvas 顶层无 z-index 会被自然覆盖),
+//   容器设 zIndex:70(高于 SkillHud 的 60 与 MobileControls 的 25),
 //   容器默认 pointerEvents:'none'(信息区不抢 pointer,canvas 的点击寻路 / 移动端摇杆不受影响),
 //   仅折叠按钮 + 重置按钮 + 折叠态展开按钮 pointerEvents:'auto'。
 import { useEffect, useRef, useState, type JSX } from 'react';
@@ -62,7 +62,7 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
           position: 'fixed',
           top: 8, // 与原 panel 顶端对齐
           left: 8,
-          zIndex: 30,
+          zIndex: 70,
           width: 24,
           height: 24,
           padding: 0,
@@ -92,7 +92,7 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
         position: 'fixed',
         top: 8,
         left: 8, // 移到左上角
-        zIndex: 30,
+        zIndex: 70,
         padding: '8px 10px 8px 28px', // 左 padding 28 给内部折叠按钮留位
         background: 'rgba(255, 255, 255, 0.5)',
         color: '#1a2230',

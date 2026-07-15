@@ -1,14 +1,18 @@
 // 练习场 session:世界生命周期、tick、cast、reset;与 React / Three 解耦
-import { createAutoAttackIntent } from '../combat/auto-attack-intent';
+import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../combat/auto-attack-intent';
+import { createFaceChargeIntent } from '../combat/face-charge-intent';
+import { clearAllCc, tickAllCc } from '../combat/unit-cc';
 import { createBuffBag } from '../buffs/buff-bag';
 import {
   arthurSkillByHotkey,
   ARTHUR_AUTO_ATTACK_ID,
+  ARTHUR_SHIELD_ID,
   getArthurAutoAttackRanges,
+  getArthurShieldAcquireRange,
 } from '../heroes/arthur';
 import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
-import type { SkillInstance, Unit } from '../skills/types';
+import type { DamageResult, SkillInstance, Unit } from '../skills/types';
 import { createPracticeDummy } from '../units/practice-dummy';
 import { createWorldState, type WorldStateHandle } from './WorldState';
 
@@ -74,7 +78,11 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const skillBook = createSkillBook();
   const buffs = createBuffBag();
   const aaIntent = createAutoAttackIntent();
+  const faceChargeIntent = createFaceChargeIntent();
   const aaRanges = getArthurAutoAttackRanges();
+  const shieldAcquireRange = getArthurShieldAcquireRange();
+
+  const allUnits = (): Unit[] => [playerUnit, dummyUnit];
 
   return {
     world,
@@ -87,7 +95,26 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       if (hotkey === '0') return this.requestAutoAttack();
       const skill = arthurSkillByHotkey(hotkey);
       if (!skill) return false;
-      return skillBook.start(skill, playerUnit, { forwardRad: playerUnit.facingRad }) !== null;
+
+      let forwardRad = playerUnit.facingRad;
+      if (skill.castMode === 'targeted' && skill.hit.kind === 'target') {
+        const target = findNearestEnemy(world, playerUnit, skill.hit.range);
+        if (!target) return false;
+        forwardRad = facingToward(playerUnit.position, target.position);
+      }
+
+      const inst = skillBook.start(skill, playerUnit, { forwardRad });
+      if (!inst) return false;
+
+      if (skill.id === ARTHUR_SHIELD_ID) {
+        aaIntent.cancel();
+        faceChargeIntent.requestCharge(
+          playerUnit,
+          world,
+          shieldAcquireRange,
+        );
+      }
+      return true;
     },
 
     requestAutoAttack() {
@@ -103,11 +130,14 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       skillBook.reset();
       buffs.clear();
       aaIntent.clear();
+      faceChargeIntent.clear();
+      clearAllCc(allUnits());
     },
 
     preTick({ dt, manualMove, playerX, playerZ }) {
       if (manualMove) {
         aaIntent.cancel();
+        faceChargeIntent.cancel();
       }
 
       playerUnit.position.x = playerX;
@@ -117,21 +147,33 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       const speedMultiplier = buffs.moveSpeedMultiplier();
 
       const aaSkill = arthurSkillByHotkey('0');
-      const closeEngage = buffs.peekNextAttackBonus() > 1 + 1e-6;
       const aaAction = aaIntent.tick({
         caster: playerUnit,
         resolveUnit: (id) => world.getUnit(id),
         canCast: aaSkill !== null && skillBook.canStart(aaSkill.id),
         attackRange: aaRanges.attackRange,
         acquireRange: aaRanges.acquireRange,
-        closeEngage,
+        closeEngage: false,
+      });
+
+      const fcAction = faceChargeIntent.tick({
+        caster: playerUnit,
+        resolveUnit: (id) => world.getUnit(id),
+        acquireRange: shieldAcquireRange,
       });
 
       let moveTarget: { x: number; z: number } | null = null;
       let facingRad: number | null = null;
       let clearMoveTarget = manualMove;
 
-      if (aaAction.kind === 'engage') {
+      if (fcAction.kind === 'engage') {
+        if (fcAction.moveTo) {
+          moveTarget = fcAction.moveTo;
+          clearMoveTarget = false;
+        }
+        facingRad = fcAction.forwardRad;
+        playerUnit.facingRad = fcAction.forwardRad;
+      } else if (aaAction.kind === 'engage') {
         moveTarget = aaAction.moveTo;
         facingRad = aaAction.forwardRad;
         playerUnit.facingRad = aaAction.forwardRad;
@@ -156,6 +198,8 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       playerUnit.position.z = playerZ;
       playerUnit.facingRad = facingRad;
 
+      tickAllCc(allUnits(), dt);
+
       const completedSkills = skillBook.tick(dt, {
         caster: playerUnit,
         world,
@@ -166,18 +210,29 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       let dummyRingPulse = false;
       let dashSync: { x: number; z: number } | null = null;
 
-      for (const completed of completedSkills) {
-        const results = completed.damage;
+      const applyFrameDamage = (inst: SkillInstance): void => {
+        const results = inst.damage;
+        if (results.length === 0) return;
         applyDamage([dummyUnit, playerUnit], results);
         world.notifyDamage(results);
+        dummyRingPulse = true;
+        (inst as SkillInstance & { damage: DamageResult[] }).damage = [];
+      };
+
+      const activeInst = skillBook.active;
+      if (activeInst) {
+        applyFrameDamage(activeInst);
+      }
+
+      for (const completed of completedSkills) {
+        if (completed !== activeInst) {
+          applyFrameDamage(completed);
+        }
         if (
           completed.skill.id === ARTHUR_AUTO_ATTACK_ID &&
-          results.length > 0
+          completed.damage.length > 0
         ) {
           buffs.consumeNextAttackBonus();
-        }
-        if (results.length > 0) {
-          dummyRingPulse = true;
         }
         if (completed.skill.displacement === 'dash') {
           dashSync = { x: playerUnit.position.x, z: playerUnit.position.z };

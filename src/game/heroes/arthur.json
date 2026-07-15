@@ -31,7 +31,7 @@
       "effect": {
         "moveSpeedBoost": 0.4,
         "duration": 3.0,
-        "nextAttackBonus": 1.5
+        "acquireRange": 8.0
       }
     },
     {
@@ -41,13 +41,15 @@
       "hit": { "kind": "circle", "radius": 3 },
       "displacement": "none",
       "castTime": 0.1,
-      "activeTime": 0.25,
+      "activeTime": 0.8,
       "recoveryTime": 0.3,
       "cooldown": 5.0,
       "castMode": "instant",
       "effect": {
-        "damage": 180,
-        "hits": 3
+        "damage": 45,
+        "aoeRadius": 3,
+        "damageInterval": 0.2,
+        "damageTicks": 4
       }
     },
     {
@@ -64,7 +66,8 @@
       "effect": {
         "damage": 350,
         "dashDistance": 6,
-        "stunDuration": 0.6
+        "aoeRadius": 3,
+        "knockupDuration": 0.6
       }
     },
     {
@@ -76,7 +79,7 @@
       "castTime": 0.0,
       "activeTime": 0.1,
       "recoveryTime": 0.15,
-      "cooldown": 0.55,
+      "cooldown": 1.1,
       "castMode": "instant",
       "effect": {
         "damage": 130,

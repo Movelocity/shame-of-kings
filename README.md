@@ -34,7 +34,7 @@ pnpm typecheck      # tsc -b
 
 | [`openspec/specs/repo-hygiene/spec.md`](./openspec/specs/repo-hygiene/spec.md) | 仓库保健契约（验证四件套、死债、冻结哨兵） |
 | [`openspec/specs/practice-session/spec.md`](./openspec/specs/practice-session/spec.md) | 练习场 session 边界（tick / cast / reset） |
-| [`openspec/changes/archive/2026-07-15-short-term-project-hygiene/`](./openspec/changes/archive/2026-07-15-short-term-project-hygiene/) | 已归档：短期保健 change |
+| [`openspec/changes/arthur-four-skill-kit/`](./openspec/changes/arthur-four-skill-kit/) | **当前 active change**：亚瑟四技能模版 + 机制重做 |
 新增架构决策前请先读 `docs/DEV.md` 与 `archives/proposal.md` §2。  
 **M4 退出门之前**：不引入新依赖、不写元歌/镜/MOBA 地图代码、不大改 `src/engine/` 核心接口（碰撞/重置所需除外）。
 

@@ -40,7 +40,7 @@ export interface EntityVisualConfig {
 
 export const DEFAULT_ENTITY_VISUAL: EntityVisualConfig = {
   radius: 0.5,
-  heightRatio: 1.5,
+  heightRatio: 2,
   indicator: 'triangle',
   triangleSize: 0.45,
   arrowLength: 1.3, // legacy,indicator=arrow 时才用

@@ -74,6 +74,31 @@ describe('SkillInstance 状态机', () => {
     expect(inst.phase).toBe('done');
   });
 
+  it('单次伤害 active 内多 tick 不重复结算', () => {
+    const caster = mkUnit('caster', 0, 0);
+    const target = mkUnit('target', 1, 0);
+    const world = mkWorld([caster, target]);
+    const skill = makeSkill({
+      id: 'test-single',
+      displayName: 'Single',
+      hit: { kind: 'circle', radius: 2 },
+      castTime: 0,
+      activeTime: 0.1,
+      recoveryTime: 0.1,
+      cooldown: 1.0,
+      damage: simpleDamage(50),
+    });
+    const inst = startSkill(skill, caster, { forwardRad: 0 });
+    inst.tick(0.01, mkCtx(caster, world));
+    expect(inst.phase).toBe('active');
+    expect(inst.damage).toHaveLength(1);
+
+    inst.tick(0.01, mkCtx(caster, world));
+    expect(inst.damage).toHaveLength(0);
+    inst.tick(0.01, mkCtx(caster, world));
+    expect(inst.damage).toHaveLength(0);
+  });
+
   it('cancel() 任意阶段直接置 done', () => {
     const caster = mkUnit('caster', 0, 0);
     const world = mkWorld([caster]);
@@ -177,7 +202,7 @@ describe('DamageFormula 视野过滤', () => {
     });
     const inst = startSkill(skill, caster, { forwardRad: 0 });
     inst.tick(0.05, mkCtx(caster, world));
-    inst.tick(0.1, mkCtx(caster, world));
+    expect(inst.phase).toBe('active');
     applyDamage([target], inst.damage);
     expect(target.hp).toBe(50);
   });

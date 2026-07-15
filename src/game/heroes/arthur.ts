@@ -1,15 +1,20 @@
 // M3 T3.1:亚瑟 4 技能装载
 // 数据驱动:从 arthur.json 读 → 转成 4 个 Skill 实例 + 1 个被动逻辑
-// M5 元歌 / M6 镜复用此模式(每个英雄一个 .json + .ts)
-// T35.2:一技能契约之盾 onActivate 挂 Buff;普攻 peek 下次普攻加成
+// M5 元歌 / M6 镜复用 hero-kit 四槽位契约
 import arthurJson from './arthur.json' with { type: 'json' };
-import { applyShieldOfPactStyle } from '../buffs/buff-bag';
+import { applyMoveSpeedBuff } from '../buffs/buff-bag';
+import { applyKnockup } from '../combat/unit-cc';
+import { resolveHits } from '../skills/hits';
 import { makeSkill } from '../skills/runtime';
-import type { DamageFormula, Hit, Skill, SkillContext } from '../skills/types';
+import type { DamageFormula, Skill } from '../skills/types';
+import {
+  assertFourSkillKit,
+  type HeroKitData,
+  type HeroSkillEffectData,
+  type HeroSkillSlotData,
+} from './hero-kit';
 
-export interface ArthurData {
-  id: string;
-  displayName: string;
+export interface ArthurData extends HeroKitData {
   stats: { hpMax: number; attackDamage: number; moveSpeed: number };
   passive: {
     id: string;
@@ -20,70 +25,64 @@ export interface ArthurData {
     outOfCombatSpeedBoost: number;
     outOfCombatWindow: number;
   };
-  skills: Array<{
-    id: string;
-    name: string;
-    hotkey: string;
-    hit: Skill['hit'];
-    displacement: Skill['displacement'];
-    castTime: number;
-    activeTime: number;
-    recoveryTime: number;
-    cooldown: number;
-    castMode?: Skill['castMode'];
-    effect: {
-      damage?: number;
-      hits?: number;
-      dashDistance?: number;
-      moveSpeedBoost?: number;
-      duration?: number;
-      nextAttackBonus?: number;
-      stunDuration?: number;
-      /** 普攻出手距离(世界单位);到位后才 start */
-      attackRange?: number;
-      /** 普攻获取/粘性锁定距离 */
-      acquireRange?: number;
-    };
-  }>;
 }
 
 const data: ArthurData = arthurJson as ArthurData;
+assertFourSkillKit(data);
 
-/** 简单伤害公式。applyNextAttackBonus=true 时用 buff 袋 peek(消费由 caller 在命中后做) */
-function arthurDamage(
-  amount: number,
-  opts?: { applyNextAttackBonus?: boolean },
-): DamageFormula {
-  return (ctx: SkillContext, hit: Hit) => {
+/** 亚瑟范围技能 canonical 半径(二技能 JSON) */
+export function getArthurAoeRadius(): number {
+  const whirl = data.skills.find((s) => s.id === 'whirlwind-strike');
+  if (whirl?.effect.aoeRadius !== undefined) return whirl.effect.aoeRadius;
+  if (whirl?.hit.kind === 'circle') return (whirl.hit as { radius: number }).radius;
+  return 3;
+}
+
+export const ARTHUR_AOE_RADIUS = getArthurAoeRadius();
+
+function arthurDamage(amount: number): DamageFormula {
+  return (_ctx, hit) => {
     if (!hit.target) return null;
-    let damage = amount;
-    if (opts?.applyNextAttackBonus && ctx.buffs) {
-      damage = Math.round(damage * ctx.buffs.peekNextAttackBonus());
-    }
-    return { targetId: hit.target.id, damage, isCrit: false };
+    return { targetId: hit.target.id, damage: amount, isCrit: false };
   };
 }
 
-/** 多段伤害公式(hits 段;M3 阶段都按单段结算,M5 镜连段时再扩) */
-function arthurMultiHit(
-  totalDamage: number,
-  hits: number,
-  passiveBonus: number,
-): DamageFormula {
-  const perHit = Math.round((totalDamage * passiveBonus) / hits);
+function perTickDamage(totalPerTick: number): DamageFormula {
   return (_ctx, hit) => {
     if (!hit.target) return null;
-    return { targetId: hit.target.id, damage: perHit, isCrit: false };
+    return { targetId: hit.target.id, damage: totalPerTick, isCrit: false };
   };
+}
+
+function skillSlot(id: string): HeroSkillSlotData {
+  const s = data.skills.find((sk) => sk.id === id);
+  if (!s) throw new Error(`arthur skill missing: ${id}`);
+  return s;
+}
+
+function effectOf(id: string): HeroSkillEffectData {
+  return skillSlot(id).effect;
 }
 
 /** 装载亚瑟 4 技能:从 JSON 数据 → 运行时 Skill 实例 */
 export function loadArthurSkills(): readonly Skill[] {
+  const shieldFx = effectOf('shield-of-pact');
+  const whirlFx = effectOf('whirlwind-strike');
+  const whirlSlot = skillSlot('whirlwind-strike');
+  const judgementFx = effectOf('sacred-judgement');
+  const aaFx = effectOf('auto-attack');
+
+  const aoeRadius = whirlFx.aoeRadius ?? ARTHUR_AOE_RADIUS;
+  const whirlHit =
+    whirlSlot.hit.kind === 'circle'
+      ? { kind: 'circle' as const, radius: aoeRadius }
+      : whirlSlot.hit;
+
   return data.skills.map((s) => {
     const base = {
       id: s.id,
       displayName: s.name,
-      hit: s.hit,
+      hit: s.id === 'whirlwind-strike' ? whirlHit : s.hit,
       displacement: s.displacement,
       castTime: s.castTime,
       activeTime: s.activeTime,
@@ -92,47 +91,69 @@ export function loadArthurSkills(): readonly Skill[] {
       dashDistance: s.effect.dashDistance ?? 0,
       castMode: s.castMode ?? 'instant',
     };
+
     if (s.id === 'shield-of-pact') {
-      const moveSpeedBoost = s.effect.moveSpeedBoost ?? 0;
-      const nextAttackBonus = s.effect.nextAttackBonus ?? 1;
-      const duration = s.effect.duration ?? 0;
+      const moveSpeedBoost = shieldFx.moveSpeedBoost ?? 0;
+      const duration = shieldFx.duration ?? 0;
       return makeSkill({
         ...base,
         onActivate(ctx) {
           if (!ctx.buffs) return;
-          applyShieldOfPactStyle(ctx.buffs, {
+          applyMoveSpeedBuff(ctx.buffs, {
             sourceId: s.id,
             moveSpeedBoost,
-            nextAttackBonus,
             duration,
           });
         },
       });
     }
-    if (s.id === 'whirlwind-strike' && s.effect.damage) {
+
+    if (s.id === 'whirlwind-strike' && whirlFx.damage) {
+      const interval = whirlFx.damageInterval ?? 0.2;
+      const ticks = whirlFx.damageTicks ?? 4;
       return makeSkill({
         ...base,
-        damage: arthurMultiHit(
-          s.effect.damage,
-          s.effect.hits ?? 1,
-          1.0, // 暂不乘被动加成
-        ),
+        damageInterval: interval,
+        damageTicks: ticks,
+        damage: perTickDamage(whirlFx.damage),
       });
     }
-    if (s.id === 'sacred-judgement' && s.effect.damage) {
-      return makeSkill({ ...base, damage: arthurDamage(s.effect.damage) });
-    }
-    if (s.id === 'auto-attack' && s.effect.damage) {
+
+    if (s.id === 'sacred-judgement' && judgementFx.damage) {
+      const knockupDuration = judgementFx.knockupDuration ?? 0.6;
+      const landRadius = judgementFx.aoeRadius ?? aoeRadius;
       return makeSkill({
         ...base,
-        damage: arthurDamage(s.effect.damage, { applyNextAttackBonus: true }),
+        damage: arthurDamage(judgementFx.damage),
+        onLand(ctx) {
+          const circleHit = { kind: 'circle' as const, radius: landRadius };
+          const hits = resolveHits(
+            ctx.world,
+            ctx.caster,
+            circleHit,
+            ctx.caster.facingRad,
+          );
+          for (const h of hits) {
+            if (!h.target || h.target.id === ctx.caster.id) continue;
+            applyKnockup(h.target, knockupDuration);
+          }
+          return [];
+        },
       });
     }
+
+    if (s.id === 'auto-attack' && aaFx.damage) {
+      return makeSkill({
+        ...base,
+        damage: arthurDamage(aaFx.damage),
+      });
+    }
+
     return makeSkill(base);
   });
 }
 
-/** 按 hotkey 取技能(M2 调试技能的 1/2/3/4 模式) */
+/** 按 hotkey 取技能 */
 export function arthurSkillByHotkey(hotkey: string): Skill | null {
   const skill = data.skills.find((s) => s.hotkey === hotkey);
   if (!skill) return null;
@@ -143,7 +164,7 @@ export const ARTHUR_DATA = data;
 export const ARTHUR_AUTO_ATTACK_ID = 'auto-attack';
 export const ARTHUR_SHIELD_ID = 'shield-of-pact';
 
-/** 普攻攻击距 / 获取距(缺省与 JSON 建议值一致) */
+/** 普攻攻击距 / 获取距 */
 export function getArthurAutoAttackRanges(): {
   attackRange: number;
   acquireRange: number;
@@ -154,3 +175,11 @@ export function getArthurAutoAttackRanges(): {
     acquireRange: aa?.effect.acquireRange ?? 8,
   };
 }
+
+/** 一技能突脸锁敌范围 */
+export function getArthurShieldAcquireRange(): number {
+  const shield = data.skills.find((s) => s.id === ARTHUR_SHIELD_ID);
+  return shield?.effect.acquireRange ?? 8;
+}
+
+export type { HeroKitData, HeroSkillSlotData, HeroSkillEffectData };
