@@ -7,8 +7,8 @@
 //
 // 关键不变量:
 //  - cast 阶段不结算伤害,active 阶段每 tick 用 hit shape 计算
-//  - displacement='dash' 一次性把 caster 推到 origin + forward*dashDistance
-//    (遇墙停由 caller 在调用前用 pushOutOfBounds 处理,M2 不内置碰撞)
+//  - displacement='dash' 按 dashSpeed 逐帧推进，抵达后才可落地结算
+//  - displacement='teleport' 才会单帧改变坐标
 //  - cooldownTimer 在 onCast 立即置为 cooldown；done 后仍需由上层持续 tick 到 0
 //  - cancel():任意阶段直接置 done,后续 tick 立刻返回
 import type {
@@ -29,6 +29,8 @@ export interface CastOptions {
   forwardRad: number;
   /** 施法原点;缺省用 caster.position */
   origin?: Vec2;
+  /** 本次施法的 dash 距离;用于按目标距离落点 */
+  dashDistance?: number;
 }
 
 /** 创建一个 SkillInstance。caller 负责把它推进到 world.activeSkill,
@@ -40,6 +42,8 @@ export function startSkill(
 ): SkillInstance {
   const origin = opts.origin ?? caster.position;
   const forward = opts.forwardRad;
+  const dashDistanceTotal = opts.dashDistance ?? skill.dashDistance;
+  let dashDistanceTravelled = 0;
   let damageTicksDone = 0;
   let intervalDamageAccum = 0;
   /** 非 interval 技能:active 内只结算一次命中 */
@@ -52,6 +56,9 @@ export function startSkill(
     origin,
     forwardRad: forward,
     damage: [],
+    hitboxActivations: 0,
+    dashDistanceTravelled: 0,
+    dashDistanceTotal,
     cancel() {
       inst.phase = 'done';
       inst.elapsed = 0;
@@ -72,13 +79,35 @@ export function startSkill(
         inst.phase = 'active';
         inst.elapsed = 0;
         singleHitResolved = false;
-        if (skill.displacement === 'dash' && skill.dashDistance > 0) {
-          applyDash(caster, inst.origin, forward, skill.dashDistance);
+        if (skill.displacement === 'teleport' && dashDistanceTotal > 0) {
+          applyDisplacement(caster, inst.origin, forward, dashDistanceTotal);
+          dashDistanceTravelled = dashDistanceTotal;
+          inst.dashDistanceTravelled = dashDistanceTotal;
         }
         // T35.2:进入 active 时回调一次(契约之盾等挂 buff)
         skill.onActivate?.(ctx);
       }
       if (inst.phase === 'active') {
+        if (
+          skill.displacement === 'dash' &&
+          dashDistanceTravelled < dashDistanceTotal
+        ) {
+          const step = Math.min(
+            dashDistanceTotal - dashDistanceTravelled,
+            skill.dashSpeed * dt,
+          );
+          dashDistanceTravelled += step;
+          inst.dashDistanceTravelled = dashDistanceTravelled;
+          applyDisplacement(
+            caster,
+            inst.origin,
+            forward,
+            dashDistanceTravelled,
+          );
+        }
+        const displacementComplete =
+          skill.displacement !== 'dash' ||
+          dashDistanceTravelled >= dashDistanceTotal - 1e-9;
         const useInterval =
           skill.damageInterval !== undefined &&
           skill.damageTicks !== undefined &&
@@ -93,6 +122,7 @@ export function startSkill(
             damageTicksDone < skill.damageTicks! &&
             intervalDamageAccum >= (damageTicksDone + 1) * skill.damageInterval!
           ) {
+            inst.hitboxActivations += 1;
             const hits = resolveHits(
               ctx.world as WorldLike,
               caster,
@@ -108,7 +138,8 @@ export function startSkill(
             damageTicksDone += 1;
           }
           if (results.length > 0) inst.damage = results;
-        } else if (!singleHitResolved) {
+        } else if (!singleHitResolved && skill.damage && displacementComplete) {
+          inst.hitboxActivations += 1;
           const hits = resolveHits(
             ctx.world as WorldLike,
             caster,
@@ -116,11 +147,9 @@ export function startSkill(
             forward,
           );
           const results: DamageResult[] = [];
-          if (skill.damage) {
-            for (const h of hits) {
-              const r = skill.damage(ctx, h);
-              if (r) results.push(r);
-            }
+          for (const h of hits) {
+            const r = skill.damage(ctx, h);
+            if (r) results.push(r);
           }
           inst.damage = results;
           singleHitResolved = true;
@@ -128,8 +157,9 @@ export function startSkill(
           inst.damage = [];
         }
 
-        if (inst.elapsed >= skill.activeTime) {
+        if (inst.elapsed >= skill.activeTime && displacementComplete) {
           if (skill.onLand) {
+            inst.hitboxActivations += 1;
             const landResults = skill.onLand(ctx);
             if (landResults.length > 0) {
               inst.damage = [...inst.damage, ...landResults];
@@ -149,7 +179,7 @@ export function startSkill(
   return inst;
 }
 
-function applyDash(
+function applyDisplacement(
   caster: Unit,
   origin: Vec2,
   forwardRad: number,
@@ -199,6 +229,7 @@ export function makeSkill(partial: {
   recoveryTime: number;
   cooldown: number;
   dashDistance?: number;
+  dashSpeed?: number;
   damage?: Skill['damage'];
   damageInterval?: number;
   damageTicks?: number;
@@ -217,6 +248,7 @@ export function makeSkill(partial: {
     recoveryTime: partial.recoveryTime,
     cooldown: partial.cooldown,
     dashDistance: partial.dashDistance ?? 0,
+    dashSpeed: partial.dashSpeed ?? 30,
     damage: partial.damage,
     damageInterval: partial.damageInterval,
     damageTicks: partial.damageTicks,

@@ -28,7 +28,11 @@ describe('assertFourSkillKit', () => {
           activeTime: 0.1,
           recoveryTime: 0.1,
           cooldown: 1,
-          effect: { damage: 50 },
+          effect: {
+            kind: 'attack-damage',
+            attackRange: 2,
+            autoAcquireRangeMultiplier: 1.3,
+          },
         },
         {
           id: 's1',
@@ -40,7 +44,14 @@ describe('assertFourSkillKit', () => {
           activeTime: 0.1,
           recoveryTime: 0.1,
           cooldown: 2,
-          effect: {},
+          effect: {
+            kind: 'move-speed-buff',
+            moveSpeedBoost: 0.4,
+            duration: 3,
+            enhancedAttackDashDistance: 6,
+            enhancedAttackDashSpeed: 30,
+            enhancedAttackAcquireRange: 8,
+          },
         },
         {
           id: 's2',
@@ -52,7 +63,12 @@ describe('assertFourSkillKit', () => {
           activeTime: 0.2,
           recoveryTime: 0.1,
           cooldown: 3,
-          effect: { aoeRadius: 2 },
+          effect: {
+            kind: 'periodic-damage',
+            damage: 40,
+            damageInterval: 0.2,
+            damageTicks: 4,
+          },
         },
         {
           id: 's3',
@@ -64,7 +80,14 @@ describe('assertFourSkillKit', () => {
           activeTime: 0.1,
           recoveryTime: 0.2,
           cooldown: 4,
-          effect: { knockupDuration: 0.5 },
+          effect: {
+            kind: 'dash-landing-knockup',
+            damage: 300,
+            dashDistance: 6,
+            dashSpeed: 30,
+            acquireRange: 8,
+            knockupDuration: 0.5,
+          },
         },
       ],
     };
@@ -75,7 +98,9 @@ describe('assertFourSkillKit', () => {
     const bad: HeroKitData = {
       id: 'bad',
       displayName: 'Bad',
-      skills: ARTHUR_DATA.skills.filter((s) => s.hotkey !== '0'),
+      skills: ARTHUR_DATA.skills.map((s) =>
+        s.hotkey === '0' ? { ...s, hotkey: '1' } : s,
+      ),
     };
     expect(() => assertFourSkillKit(bad)).toThrow(/hotkey "0"/);
   });

@@ -31,7 +31,9 @@
         "kind": "move-speed-buff",
         "moveSpeedBoost": 0.4,
         "duration": 3.0,
-        "acquireRange": 8.0
+        "enhancedAttackDashDistance": 6.0,
+        "enhancedAttackDashSpeed": 30.0,
+        "enhancedAttackAcquireRange": 8.0
       }
     },
     {
@@ -41,14 +43,14 @@
       "hit": { "kind": "circle", "radius": 3 },
       "displacement": "none",
       "castTime": 0.1,
-      "activeTime": 0.8,
+      "activeTime": 2,
       "recoveryTime": 0.3,
       "cooldown": 5.0,
       "castMode": "instant",
       "effect": {
         "kind": "periodic-damage",
         "damage": 45,
-        "damageInterval": 0.2,
+        "damageInterval": 0.5,
         "damageTicks": 4
       }
     },
@@ -56,7 +58,7 @@
       "id": "sacred-judgement",
       "name": "圣剑裁决",
       "hotkey": "3",
-      "hit": { "kind": "target", "range": 8 },
+      "hit": { "kind": "circle", "radius": 3 },
       "displacement": "dash",
       "castTime": 0.3,
       "activeTime": 0.15,
@@ -67,6 +69,8 @@
         "kind": "dash-landing-knockup",
         "damage": 350,
         "dashDistance": 6,
+        "dashSpeed": 30,
+        "acquireRange": 8,
         "knockupDuration": 0.6
       }
     },
@@ -79,12 +83,12 @@
       "castTime": 0.0,
       "activeTime": 0.1,
       "recoveryTime": 0.15,
-      "cooldown": 1.1,
+      "cooldown": 0.9,
       "castMode": "instant",
       "effect": {
         "kind": "attack-damage",
         "attackRange": 2.0,
-        "acquireRange": 8.0
+        "autoAcquireRangeMultiplier": 1.3
       }
     }
   ]

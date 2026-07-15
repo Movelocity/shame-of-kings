@@ -2,7 +2,8 @@
 // Skill 框架核心类型:M2 阶段实现运行时 + 命中盒,本文件先定契约
 // 关键约定(都来自 proposal §5.2 与本提案 §3 G2):
 //  - 5 类命中盒:self / circle / rect / cone / target
-//  - 位移方式:ground(沿平面滑动,可斜撞)/ dash(一次性突进,遇墙停),**无 y±**
+//  - 位移方式:ground(常规移动) / dash(按速度逐帧突进) /
+//    teleport(单帧到达),**无 y±**
 //  - SkillContext.caster 用 Unit | TowerUnit 联合类型:T3 接 Unit,
 //    P2 T5C.4 接 TowerUnit,闸口先定型
 //  - DamageFormula 接收 (ctx, hit),自动处理 target.hidden:
@@ -28,7 +29,7 @@ export type HitShape =
   | { kind: 'target'; range: number };
 
 /** 位移方式(proposal §5.2 锁定,不允许 y±) */
-export type Displacement = 'ground' | 'dash' | 'none';
+export type Displacement = 'ground' | 'dash' | 'teleport' | 'none';
 
 export type Team = 'blue' | 'red' | 'neutral';
 
@@ -131,6 +132,8 @@ export interface Skill {
   readonly cooldown: number;
   /** 位移距离(世界单位);'none' 时忽略 */
   readonly dashDistance: number;
+  /** dash 速度(世界单位/秒)；teleport 不使用 */
+  readonly dashSpeed: number;
   /**
    * 施法模式(2026-07-14 KI-4 引入):
    *  - 'instant':   按下即施(默认,兼容 M3 现有 4 技能)
@@ -176,6 +179,11 @@ export interface SkillInstance {
   cancel(): void;
   /** 本帧(或最近一次)结算的伤害结果;供 caller 触发飘字/扣血 */
   damage: readonly DamageResult[];
+  /** 已产生的伤害碰撞盒次数，供渲染层逐次绑定特效 */
+  hitboxActivations: number;
+  /** dash 进度；teleport 会在单帧直接到 total */
+  dashDistanceTravelled: number;
+  readonly dashDistanceTotal: number;
   /** 推进一帧 dt;返回本帧新结算的伤害(可空数组) */
   tick(dt: number, ctx: SkillContext): readonly DamageResult[];
 }

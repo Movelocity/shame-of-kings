@@ -6,7 +6,7 @@
 
 ## 2. 亚瑟技能数据（arthur-skill-kit）
 
-- [x] 2.1 重写 `arthur.json` 一技能：移速 buff + `acquireRange` 突脸锁敌参数；移除与产品不符的「仅下次普攻加成」若不再保留
+- [x] 2.1 重写 `arthur.json` 一技能：移速 buff + `enhancedAttackDashDistance`；点击技能本身不位移
 - [x] 2.2 重写二技能：`aoeRadius`、`damageInterval`、`damageTicks`；`activeTime` 与间歇 tick 对齐
 - [x] 2.3 重写三技能：共享 `aoeRadius`、`knockupDuration`；`stunDuration` 改为击飞语义
 - [x] 2.4 普攻槽（hotkey `0`）保持四槽位结构，确认 lock 敌语义未破坏
@@ -16,7 +16,9 @@
 - [x] 3.1 `types.ts`：`Unit.cc` 可选字段；`Skill` 可选 `damageInterval` / `damageTicks` 或等价配置
 - [x] 3.2 `runtime.ts`：active 阶段按 interval 间歇 `resolveHits`（二技能）
 - [x] 3.3 新增 `src/game/combat/unit-cc.ts`：`applyKnockup`、`tickCc`、`clearCc`
-- [x] 3.4 一技能突脸：锁最近敌人 intent（复用 `findNearestEnemy`），`practice-session` preTick 驱动追击/到位
+- [x] 3.4 英雄状态栈：属性叠加 + 指定技能/次数/持续时间 + 索敌/非索敌 dash；一技能强化普攻出手时消耗
+- [x] 3.6 普通普攻自动追击范围收缩为 `attackRange × 1.3`，超出时空 A
+- [x] 3.7 `dash` 按速度逐帧推进且抵达后结算；新增 `teleport` 单帧位移语义；强化普攻独立配置索敌距离
 - [x] 3.5 三技能落地圈：dash 结束后同 `aoeRadius` 二次 AoE + 对命中单位 `applyKnockup`
 
 ## 4. Session 与表现（practice-session + unit-crowd-control）
@@ -29,7 +31,7 @@
 
 - [x] 5.1 `tests/heroes/hero-kit.test.ts`：四槽位校验通过/失败用例
 - [x] 5.2 `tests/combat/unit-cc.test.ts`：击飞施加、tick 过期、reset 清空
-- [x] 5.3 `tests/heroes/arthur-skills.test.ts`：二技能间歇 tick 次数、三技能击飞、一技能无目标仅 buff
+- [x] 5.3 单测：空 A、一技能不直接位移/下次普攻 dash、二技能周期伤害盒、三技能落地圈击飞
 - [x] 5.4 更新 `docs/DEV.md` T35.4 机制表与亚瑟技能描述
 - [ ] 5.5 手测：桌面 0/1/2/3；木人桩血条上方击飞可见
 

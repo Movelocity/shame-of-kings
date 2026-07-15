@@ -101,11 +101,12 @@ describe('SkillInstance 状态机', () => {
 
   it('cancel() 任意阶段直接置 done', () => {
     const caster = mkUnit('caster', 0, 0);
-    const world = mkWorld([caster]);
+    const target = mkUnit('target', 0, -5);
+    const world = mkWorld([caster, target]);
     const skill = makeSkill({
       id: 'test',
       displayName: 'Test',
-      hit: { kind: 'self' },
+      hit: { kind: 'circle', radius: 0.5 },
       castTime: 1.0,
       activeTime: 0.5,
       recoveryTime: 0.5,
@@ -121,28 +122,61 @@ describe('SkillInstance 状态机', () => {
     expect(inst.phase).toBe('done');
   });
 
-  it('displacement=dash 一次性把 caster 推到 origin + forward*distance', () => {
+  it('displacement=dash 按速度逐帧推进，不是瞬移', () => {
     const caster = mkUnit('caster', 0, 0);
-    const world = mkWorld([caster]);
+    const target = mkUnit('target', 0, -5);
+    const world = mkWorld([caster, target]);
     const skill = makeSkill({
       id: 'test-dash',
       displayName: 'Dash',
-      hit: { kind: 'self' },
+      hit: { kind: 'circle', radius: 0.5 },
       displacement: 'dash',
       castTime: 0.1,
       activeTime: 0.1,
       recoveryTime: 0.1,
       cooldown: 1.0,
       dashDistance: 5,
+      dashSpeed: 10,
+      damage: simpleDamage(25),
     });
     const inst = startSkill(skill, caster, { forwardRad: 0 });
-    // cast → active,触发 dash:caster 应在 (0, -5)
     inst.tick(0.1, mkCtx(caster, world));
-    inst.tick(0.05, mkCtx(caster, world));
-    // 第一次 tick 0.1 仍在 cast(0.1 < 0.1 不满足,看实现条件:>= castTime 推进;看仔细)
-    // 实际:第一次 tick 0.1 累计 elapsed=0.1, 0.1 >= 0.1 castTime → 进 active → 应用 dash
+    expect(caster.position.z).toBeCloseTo(-1, 5);
+    expect(inst.phase).toBe('active');
+    expect(inst.dashDistanceTravelled).toBeCloseTo(1, 5);
+    expect(inst.damage).toHaveLength(0);
+
+    inst.tick(0.2, mkCtx(caster, world));
+    expect(caster.position.z).toBeCloseTo(-3, 5);
+    expect(inst.phase).toBe('active');
+    expect(inst.damage).toHaveLength(0);
+
+    inst.tick(0.2, mkCtx(caster, world));
     expect(caster.position.x).toBe(0);
     expect(caster.position.z).toBe(-5);
+    expect(inst.dashDistanceTravelled).toBe(5);
+    expect(inst.damage[0]?.targetId).toBe('target');
+    expect(inst.phase).toBe('recovery');
+  });
+
+  it('displacement=teleport 才会单帧到达终点', () => {
+    const caster = mkUnit('caster', 0, 0);
+    const world = mkWorld([caster]);
+    const skill = makeSkill({
+      id: 'test-teleport',
+      displayName: 'Teleport',
+      hit: { kind: 'self' },
+      displacement: 'teleport',
+      castTime: 0.1,
+      activeTime: 0.1,
+      recoveryTime: 0.1,
+      cooldown: 1,
+      dashDistance: 5,
+    });
+    const inst = startSkill(skill, caster, { forwardRad: 0 });
+    inst.tick(0.1, mkCtx(caster, world));
+    expect(caster.position.z).toBe(-5);
+    expect(inst.dashDistanceTravelled).toBe(5);
   });
 
   it('displacement=ground 不自动移动(由 controller 推进,M2 留口子)', () => {

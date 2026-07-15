@@ -1,19 +1,16 @@
 // 练习场 session:世界生命周期、tick、cast、reset;与 React / Three 解耦
 import type { AutoAttackPriority } from '../../engine/input/desktop-skill-hotkeys';
 import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../combat/auto-attack-intent';
-import { createFaceChargeIntent } from '../combat/face-charge-intent';
 import { clearAllCc, tickAllCc } from '../combat/unit-cc';
-import { createBuffBag } from '../buffs/buff-bag';
+import { createHeroStateStack } from '../buffs/buff-bag';
 import {
   arthurSkillByHotkey,
-  ARTHUR_AUTO_ATTACK_ID,
-  ARTHUR_SHIELD_ID,
   getArthurAutoAttackRanges,
-  getArthurShieldAcquireRange,
+  getArthurJudgementAcquireRange,
 } from '../heroes/arthur';
 import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
-import type { DamageResult, SkillInstance, Unit } from '../skills/types';
+import type { DamageResult, Skill, SkillInstance, Unit } from '../skills/types';
 import {
   createPracticeDummy,
   PRACTICE_DUMMY_REGEN_PER_SEC,
@@ -62,10 +59,19 @@ export interface PracticeHudButtonState {
   locked: boolean;
 }
 
+interface ResolvedDashEnhancement {
+  distance: number;
+  speed: number;
+  acquireRange: number;
+  targeting: 'locked' | 'forward' | 'locked-or-forward';
+}
+
 export interface PracticeSession {
   readonly world: WorldStateHandle;
   readonly skillBook: ReturnType<typeof createSkillBook>;
-  readonly buffs: ReturnType<typeof createBuffBag>;
+  readonly heroState: ReturnType<typeof createHeroStateStack>;
+  /** @deprecated 兼容旧调用方；与 heroState 为同一实例 */
+  readonly buffs: ReturnType<typeof createHeroStateStack>;
   readonly playerUnit: Unit;
   readonly dummyUnit: Unit;
   preTick(input: PracticePreTickInput): PracticePreTickResult;
@@ -82,11 +88,11 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const dummyUnit = init.dummyUnit ?? createPracticeDummy();
   const world = createWorldState({ units: [playerUnit, dummyUnit] });
   const skillBook = createSkillBook();
-  const buffs = createBuffBag();
+  const heroState = createHeroStateStack();
+  const buffs = heroState;
   const aaIntent = createAutoAttackIntent();
-  const faceChargeIntent = createFaceChargeIntent();
   const aaRanges = getArthurAutoAttackRanges();
-  const shieldAcquireRange = getArthurShieldAcquireRange();
+  const judgementAcquireRange = getArthurJudgementAcquireRange();
 
   let dummyAlive = true;
 
@@ -99,7 +105,6 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     dummyUnit.cc = undefined;
     dummyAlive = false;
     aaIntent.cancel();
-    faceChargeIntent.cancel();
     return true;
   };
 
@@ -111,41 +116,131 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     );
   };
 
+  const startAutoAttack = (
+    forwardRad: number,
+    dash: { distance: number; speed: number } | null,
+  ): boolean => {
+    const base = arthurSkillByHotkey('0');
+    if (!base) return false;
+    const skill: Skill = dash && dash.distance > 0
+      ? {
+          ...base,
+          displacement: 'dash',
+          dashDistance: dash.distance,
+          dashSpeed: dash.speed,
+        }
+      : base;
+    const started = skillBook.start(skill, playerUnit, { forwardRad });
+    if (!started) return false;
+    buffs.consumeSkillEnhancements(base.id);
+    buffs.consumeNextAttackBonus();
+    return true;
+  };
+
+  const autoAttackDashEnhancement = (
+    hasLockedTarget: boolean,
+  ): ResolvedDashEnhancement | null => {
+    let resolved: ResolvedDashEnhancement | null = null;
+    for (const enhancement of buffs.skillEnhancements('auto-attack')) {
+      for (const effect of enhancement.effects) {
+        if (effect.kind !== 'dash') continue;
+        const applies = hasLockedTarget
+          ? effect.targeting === 'locked' || effect.targeting === 'locked-or-forward'
+          : effect.targeting === 'forward' || effect.targeting === 'locked-or-forward';
+        if (applies && (!resolved || effect.acquireRange > resolved.acquireRange)) {
+          resolved = effect;
+        }
+      }
+    }
+    return resolved;
+  };
+
+  const skillDashEnhancement = (
+    skillId: string,
+  ): ResolvedDashEnhancement | null => {
+    let resolved: ResolvedDashEnhancement | null = null;
+    for (const enhancement of buffs.skillEnhancements(skillId)) {
+      for (const effect of enhancement.effects) {
+        if (effect.kind !== 'dash') continue;
+        if (!resolved || effect.acquireRange > resolved.acquireRange) {
+          resolved = effect;
+        }
+      }
+    }
+    return resolved;
+  };
+
   return {
     world,
     skillBook,
+    heroState,
     buffs,
     playerUnit,
     dummyUnit,
 
     tryCastHotkey(hotkey) {
       if (hotkey === '0') return this.requestAutoAttack();
-      const skill = arthurSkillByHotkey(hotkey);
-      if (!skill) return false;
+      const baseSkill = arthurSkillByHotkey(hotkey);
+      if (!baseSkill) return false;
+      const enhancedDash = skillDashEnhancement(baseSkill.id);
+      const skill: Skill = enhancedDash
+        ? {
+            ...baseSkill,
+            displacement: 'dash',
+            dashDistance: enhancedDash.distance,
+            dashSpeed: enhancedDash.speed,
+          }
+        : baseSkill;
 
       let forwardRad = playerUnit.facingRad;
-      if (skill.castMode === 'targeted' && skill.hit.kind === 'target') {
-        const target = findNearestEnemy(world, playerUnit, skill.hit.range);
-        if (!target) return false;
-        forwardRad = facingToward(playerUnit.position, target.position);
+      let dashDistance: number | undefined;
+      const enhancementNeedsTarget =
+        enhancedDash?.targeting === 'locked' ||
+        enhancedDash?.targeting === 'locked-or-forward';
+      if (skill.castMode === 'targeted' || enhancementNeedsTarget) {
+        const acquireRange = skill.id === 'sacred-judgement'
+          ? judgementAcquireRange
+          : enhancedDash
+            ? enhancedDash.acquireRange
+            : skill.hit.kind === 'target'
+              ? skill.hit.range
+              : 0;
+        const target = findNearestEnemy(world, playerUnit, acquireRange);
+        if (!target && (skill.castMode === 'targeted' || enhancedDash?.targeting === 'locked')) {
+          return false;
+        }
+        if (target) {
+          forwardRad = facingToward(playerUnit.position, target.position);
+          const dx = target.position.x - playerUnit.position.x;
+          const dz = target.position.z - playerUnit.position.z;
+          dashDistance = Math.min(skill.dashDistance, Math.hypot(dx, dz));
+        }
       }
 
-      const inst = skillBook.start(skill, playerUnit, { forwardRad });
+      const inst = skillBook.start(skill, playerUnit, { forwardRad, dashDistance });
       if (!inst) return false;
-
-      if (skill.id === ARTHUR_SHIELD_ID) {
-        aaIntent.cancel();
-        faceChargeIntent.requestCharge(
-          playerUnit,
-          world,
-          shieldAcquireRange,
-        );
-      }
+      buffs.consumeSkillEnhancements(skill.id);
       return true;
     },
 
     requestAutoAttack(priority: AutoAttackPriority = 'default') {
-      return aaIntent.requestAttack(playerUnit, world, aaRanges.acquireRange, priority);
+      const aaSkill = arthurSkillByHotkey('0');
+      if (!aaSkill || !skillBook.canStart(aaSkill.id)) return false;
+      const acquireRange = Math.max(
+        aaRanges.acquireRange,
+        autoAttackDashEnhancement(true)?.acquireRange ?? 0,
+      );
+      if (aaIntent.requestAttack(playerUnit, world, acquireRange, priority)) {
+        return true;
+      }
+      // 无可锁目标也要按当前朝向释放普攻。
+      const forwardDash = autoAttackDashEnhancement(false);
+      return startAutoAttack(
+        playerUnit.facingRad,
+        forwardDash
+          ? { distance: forwardDash.distance, speed: forwardDash.speed }
+          : null,
+      );
     },
 
     cancelAutoAttack() {
@@ -161,14 +256,12 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       skillBook.reset();
       buffs.clear();
       aaIntent.clear();
-      faceChargeIntent.clear();
       clearAllCc(allUnits());
     },
 
     preTick({ dt, manualMove, playerX, playerZ }) {
       if (manualMove) {
         aaIntent.cancel();
-        faceChargeIntent.cancel();
       }
 
       playerUnit.position.x = playerX;
@@ -178,41 +271,46 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       const speedMultiplier = buffs.moveSpeedMultiplier();
 
       const aaSkill = arthurSkillByHotkey('0');
+      const empoweredDash = autoAttackDashEnhancement(true);
       const aaAction = aaIntent.tick({
         caster: playerUnit,
         resolveUnit: (id) => world.getUnit(id),
         canCast: aaSkill !== null && skillBook.canStart(aaSkill.id),
-        attackRange: aaRanges.attackRange,
-        acquireRange: aaRanges.acquireRange,
+        attackRange: Math.max(
+          aaRanges.attackRange,
+          empoweredDash?.acquireRange ?? 0,
+        ),
+        acquireRange: Math.max(
+          aaRanges.acquireRange,
+          empoweredDash?.acquireRange ?? 0,
+        ),
         closeEngage: false,
-      });
-
-      const fcAction = faceChargeIntent.tick({
-        caster: playerUnit,
-        resolveUnit: (id) => world.getUnit(id),
-        acquireRange: shieldAcquireRange,
       });
 
       let moveTarget: { x: number; z: number } | null = null;
       let facingRad: number | null = null;
       let clearMoveTarget = manualMove;
 
-      if (fcAction.kind === 'engage') {
-        if (fcAction.moveTo) {
-          moveTarget = fcAction.moveTo;
-          clearMoveTarget = false;
-        }
-        facingRad = fcAction.forwardRad;
-        playerUnit.facingRad = fcAction.forwardRad;
-      } else if (aaAction.kind === 'engage') {
+      if (aaAction.kind === 'engage') {
         moveTarget = aaAction.moveTo;
         facingRad = aaAction.forwardRad;
         playerUnit.facingRad = aaAction.forwardRad;
         clearMoveTarget = false;
         if (aaAction.shouldCast && aaSkill) {
-          skillBook.start(aaSkill, playerUnit, {
-            forwardRad: aaAction.forwardRad,
-          });
+          const target = world.getUnit(aaAction.targetId);
+          const dx = target ? target.position.x - playerUnit.position.x : 0;
+          const dz = target ? target.position.z - playerUnit.position.z : 0;
+          const targetDistance = Math.hypot(dx, dz);
+          const dash = empoweredDash
+            ? {
+                distance: Math.min(
+                  empoweredDash.distance,
+                  Math.max(0, targetDistance - 0.45),
+                ),
+                speed: empoweredDash.speed,
+              }
+            : null;
+          startAutoAttack(aaAction.forwardRad, dash);
         }
       }
 
@@ -256,17 +354,14 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       const activeInst = skillBook.active;
       if (activeInst) {
         applyFrameDamage(activeInst);
+        if (activeInst.skill.displacement === 'dash') {
+          dashSync = { x: playerUnit.position.x, z: playerUnit.position.z };
+        }
       }
 
       for (const completed of completedSkills) {
         if (completed !== activeInst) {
           applyFrameDamage(completed);
-        }
-        if (
-          completed.skill.id === ARTHUR_AUTO_ATTACK_ID &&
-          completed.damage.length > 0
-        ) {
-          buffs.consumeNextAttackBonus();
         }
         if (completed.skill.displacement === 'dash') {
           dashSync = { x: playerUnit.position.x, z: playerUnit.position.z };

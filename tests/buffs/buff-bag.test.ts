@@ -106,6 +106,46 @@ describe('BuffBag', () => {
     expect(bag.moveSpeedMultiplier()).toBe(1);
   });
 
+  it('技能强化可指定目标技能、dash 索敌模式和可用次数', () => {
+    const bag = createBuffBag();
+    bag.applySkillEnhancement({
+      id: 'dash-aa',
+      sourceSkillId: 's1',
+      targetSkillId: 'auto-attack',
+      duration: 3,
+      charges: 2,
+      effects: [
+        {
+          kind: 'dash',
+          distance: 6,
+          speed: 30,
+          acquireRange: 8,
+          targeting: 'locked-or-forward',
+        },
+      ],
+    });
+    expect(bag.skillEnhancements('auto-attack')[0]?.charges).toBe(2);
+    expect(bag.consumeSkillEnhancements('auto-attack')[0]?.effects[0]).toEqual({
+      kind: 'dash',
+      distance: 6,
+      speed: 30,
+      acquireRange: 8,
+      targeting: 'locked-or-forward',
+    });
+    expect(bag.skillEnhancements('auto-attack')[0]?.charges).toBe(1);
+    bag.consumeSkillEnhancements('auto-attack');
+    expect(bag.skillEnhancements('auto-attack')).toHaveLength(0);
+  });
+
+  it('英雄属性状态可叠加攻击力和移速', () => {
+    const bag = createBuffBag();
+    bag.apply({ id: 'ms', kind: 'moveSpeed', value: 0.4, duration: 3 });
+    bag.apply({ id: 'attack-a', kind: 'attackPower', value: 0.2, duration: 3 });
+    bag.apply({ id: 'attack-b', kind: 'attackPower', value: 0.1, duration: 3 });
+    expect(bag.moveSpeedMultiplier()).toBeCloseTo(1.4, 5);
+    expect(bag.attackPowerMultiplier()).toBeCloseTo(1.3, 5);
+  });
+
   it('duration ≤ 0 的 apply 被忽略', () => {
     const bag = createBuffBag();
     bag.apply({ id: 'ms', kind: 'moveSpeed', value: 0.4, duration: 0 });

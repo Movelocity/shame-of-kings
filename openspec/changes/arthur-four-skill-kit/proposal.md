@@ -7,9 +7,9 @@
 ## What Changes
 
 - 确立 **四技能模版**（hotkey `0` 普攻 + `1/2/3` 主动）：JSON schema、loader 契约、预留字段；亚瑟为首个实现，其它英雄后续复用
-- **一技能**：加速 buff + **锁最近敌人突脸**（复用锁敌/追击语义，非玩家选方向 dash）
+- **一技能**：加速 buff + **强化下一次普攻为 dash**；点击一技能本身不位移
 - **二技能**：以自身为圆心的范围伤害，**active 阶段内间歇 tick**（非单帧多段）
-- **三技能**：指向性 **瞬间突脸**目标附近 → 落地 **与二技能同半径** 的圈伤 → 对命中敌人施加 **击飞**
+- **三技能**：指向性 dash 到目标附近（按速度逐帧推进，非 teleport）→ 落地 **与二技能同半径** 的圈伤 → 对命中敌人施加 **击飞**
 - 新增最小 **CC 状态**（击飞）：挂在 `Unit`，由 `practice-session` tick 递减；`resetWorld` 清空
 - **血条上方状态条**：击飞时在木人桩（及未来单位）血条上方显示状态文案/图标
 - 更新 `arthur.json` 与 `arthur.ts` loader；**BREAKING** 相对旧「契约之盾仅自 buff」的一技能语义
@@ -20,7 +20,7 @@
 ### New Capabilities
 
 - `hero-four-skill-template`: 英雄四槽位数据模版（0 普攻 + 1/2/3 主动）、共享 JSON 字段与 loader 契约，供多英雄复用
-- `arthur-skill-kit`: 亚瑟三主动 + 普攻的具体机制（突脸锁敌、间歇圈伤、落地圈 + 击飞）
+- `arthur-skill-kit`: 亚瑟三主动 + 普攻的具体机制（强化普攻 dash、周期伤害圈、落地圈 + 击飞）
 - `unit-crowd-control`: 单位 CC 状态（击飞）、session tick、reset 清空、与技能施加入口
 
 ### Modified Capabilities
@@ -29,11 +29,11 @@
 
 ## Architecture Impact
 
-- **复用**：`createSkillBook`、`startSkill`/`SkillInstance`、`createBuffBag`、`createAutoAttackIntent`（一技能锁敌可参考）、`findNearestEnemy`、`practice-session` pre/post tick、`WorldHpBars`
+- **复用**：`createSkillBook`、`startSkill`/`SkillInstance`、`createHeroStateStack`、`createAutoAttackIntent`、`findNearestEnemy`、`practice-session` pre/post tick、`WorldHpBars`
 - **扩展**：`Unit` 增加可选 `status`/`cc` 字段；`Skill`/`SkillInstance` 支持 active 内 **周期性** 命中（二技能）；三技能 **落地二次 AoE**（共享 `aoeRadius`）
 - **影响模块**：`src/game/heroes/arthur.json`、`arthur.ts`、`arthur.schema.json`；`src/game/skills/types.ts`、`runtime.ts`；`src/game/world/practice-session.ts`；`src/game/world/WorldHpBars.ts`；可选 `src/game/combat/` 下小模块（锁敌突脸 / CC 袋）
 - **不改**：`src/engine/` 除后续碰撞 change 外；React HUD 热键布局仍为 0–3
-- **测试**：CC tick、二技能间歇伤害 tick 数、三技能击飞施加、一技能锁最近敌人突脸 intent；现有 buff/普攻单测不回归
+- **测试**：空 A、强化普攻 dash 消耗、二技能周期重新解析伤害盒、三技能落地圈伤与击飞
 
 ## Impact
 

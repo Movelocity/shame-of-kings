@@ -2,11 +2,11 @@
 // 数据驱动:从 arthur.json 读 → 转成 4 个 Skill 实例 + 1 个被动逻辑
 // M5 元歌 / M6 镜复用 hero-kit 四槽位契约
 import arthurJson from './arthur.json' with { type: 'json' };
-import { applyMoveSpeedBuff } from '../buffs/buff-bag';
+import { applyMoveSpeedBuff, applyNextAttackDash } from '../buffs/buff-bag';
 import { applyKnockup } from '../combat/unit-cc';
 import { resolveHits } from '../skills/hits';
 import { makeSkill } from '../skills/runtime';
-import type { DamageFormula, Skill } from '../skills/types';
+import type { DamageFormula, DamageResult, Skill } from '../skills/types';
 import {
   assertFourSkillKit,
   type HeroKitData,
@@ -39,10 +39,17 @@ export function getArthurAoeRadius(): number {
 
 export const ARTHUR_AOE_RADIUS = getArthurAoeRadius();
 
-function arthurDamage(amount: number): DamageFormula {
-  return (_ctx, hit) => {
+function arthurDamage(amount: number, scalesWithAttackPower = false): DamageFormula {
+  return (ctx, hit) => {
     if (!hit.target) return null;
-    return { targetId: hit.target.id, damage: amount, isCrit: false };
+    const multiplier = scalesWithAttackPower
+      ? ctx.buffs?.attackPowerMultiplier() ?? 1
+      : 1;
+    return {
+      targetId: hit.target.id,
+      damage: amount * multiplier,
+      isCrit: false,
+    };
   };
 }
 
@@ -59,10 +66,6 @@ function skillSlot(id: string): HeroSkillSlotData {
   return s;
 }
 
-function effectOf(id: string): HeroSkillEffectData {
-  return skillSlot(id).effect;
-}
-
 /** 装载亚瑟 4 技能:从 JSON 数据 → 运行时 Skill 实例 */
 export function loadArthurSkills(): readonly Skill[] {
   const whirlSlot = skillSlot('whirlwind-strike');
@@ -73,6 +76,7 @@ export function loadArthurSkills(): readonly Skill[] {
       : whirlSlot.hit;
 
   return data.skills.map((s) => {
+    const effect = s.effect;
     const base = {
       id: s.id,
       displayName: s.name,
@@ -82,37 +86,45 @@ export function loadArthurSkills(): readonly Skill[] {
       activeTime: s.activeTime,
       recoveryTime: s.recoveryTime,
       cooldown: s.cooldown,
-      dashDistance: s.effect.dashDistance ?? 0,
+      dashDistance: 'dashDistance' in effect ? effect.dashDistance : 0,
+      dashSpeed: 'dashSpeed' in effect ? effect.dashSpeed : 0,
       castMode: s.castMode ?? 'instant',
     };
 
-    if (s.effect.kind === 'move-speed-buff') {
+    if (effect.kind === 'move-speed-buff') {
       return makeSkill({
         ...base,
         onActivate(ctx) {
           if (!ctx.buffs) return;
           applyMoveSpeedBuff(ctx.buffs, {
             sourceId: s.id,
-            moveSpeedBoost: s.effect.moveSpeedBoost,
-            duration: s.effect.duration,
+            moveSpeedBoost: effect.moveSpeedBoost,
+            duration: effect.duration,
+          });
+          applyNextAttackDash(ctx.buffs, {
+            sourceId: s.id,
+            targetSkillId: ARTHUR_AUTO_ATTACK_ID,
+            dashDistance: effect.enhancedAttackDashDistance,
+            dashSpeed: effect.enhancedAttackDashSpeed,
+            acquireRange: effect.enhancedAttackAcquireRange,
+            duration: effect.duration,
           });
         },
       });
     }
 
-    if (s.effect.kind === 'periodic-damage') {
+    if (effect.kind === 'periodic-damage') {
       return makeSkill({
         ...base,
-        damageInterval: s.effect.damageInterval,
-        damageTicks: s.effect.damageTicks,
-        damage: perTickDamage(s.effect.damage),
+        damageInterval: effect.damageInterval,
+        damageTicks: effect.damageTicks,
+        damage: perTickDamage(effect.damage),
       });
     }
 
-    if (s.effect.kind === 'dash-landing-knockup') {
+    if (effect.kind === 'dash-landing-knockup') {
       return makeSkill({
         ...base,
-        damage: arthurDamage(s.effect.damage),
         onLand(ctx) {
           const circleHit = { kind: 'circle' as const, radius: aoeRadius };
           const hits = resolveHits(
@@ -121,19 +133,22 @@ export function loadArthurSkills(): readonly Skill[] {
             circleHit,
             ctx.caster.facingRad,
           );
+          const results: DamageResult[] = [];
           for (const h of hits) {
             if (!h.target || h.target.id === ctx.caster.id) continue;
-            applyKnockup(h.target, s.effect.knockupDuration);
+            applyKnockup(h.target, effect.knockupDuration);
+            const result = arthurDamage(effect.damage)(ctx, h);
+            if (result) results.push(result);
           }
-          return [];
+          return results;
         },
       });
     }
 
-    if (s.effect.kind === 'attack-damage') {
+    if (effect.kind === 'attack-damage') {
       return makeSkill({
         ...base,
-        damage: arthurDamage(data.stats.attackDamage),
+        damage: arthurDamage(data.stats.attackDamage, true),
       });
     }
 
@@ -158,16 +173,32 @@ export function getArthurAutoAttackRanges(): {
   acquireRange: number;
 } {
   const aa = data.skills.find((s) => s.id === ARTHUR_AUTO_ATTACK_ID);
+  const attackRange =
+    aa?.effect.kind === 'attack-damage' ? aa.effect.attackRange : 2;
   return {
-    attackRange: aa?.effect.kind === 'attack-damage' ? aa.effect.attackRange : 2,
-    acquireRange: aa?.effect.kind === 'attack-damage' ? aa.effect.acquireRange : 8,
+    attackRange,
+    acquireRange:
+      attackRange *
+      (aa?.effect.kind === 'attack-damage'
+        ? aa.effect.autoAcquireRangeMultiplier
+        : 1.3),
   };
 }
 
-/** 一技能突脸锁敌范围 */
-export function getArthurShieldAcquireRange(): number {
+/** 一技能强化普攻的最大 dash 距离 */
+export function getArthurShieldDashDistance(): number {
   const shield = data.skills.find((s) => s.id === ARTHUR_SHIELD_ID);
-  return shield?.effect.kind === 'move-speed-buff' ? shield.effect.acquireRange : 8;
+  return shield?.effect.kind === 'move-speed-buff'
+    ? shield.effect.enhancedAttackDashDistance
+    : 0;
+}
+
+/** 三技能选敌范围与伤害圆半径分开 */
+export function getArthurJudgementAcquireRange(): number {
+  const judgement = data.skills.find((s) => s.id === 'sacred-judgement');
+  return judgement?.effect.kind === 'dash-landing-knockup'
+    ? judgement.effect.acquireRange
+    : 8;
 }
 
 export type { HeroKitData, HeroSkillSlotData, HeroSkillEffectData };

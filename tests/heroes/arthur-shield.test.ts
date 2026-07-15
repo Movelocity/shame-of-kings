@@ -1,4 +1,4 @@
-// T35.2:契约之盾挂 buff + 突脸锁敌(无下次普攻加成)
+// T35.2:契约之盾挂移速 + 下次普攻 dash，技能本身不位移
 import { describe, expect, it } from 'vitest';
 import {
   arthurSkillByHotkey,
@@ -44,7 +44,7 @@ function enterActive(
 }
 
 describe('T35.2 契约之盾', () => {
-  it('进入 active 后仅挂移速 buff(读 JSON 数值)', () => {
+  it('进入 active 后挂移速与下次普攻 dash(读 JSON 数值)', () => {
     const shield = loadArthurSkills().find((s) => s.id === ARTHUR_SHIELD_ID);
     expect(shield).toBeDefined();
     const json = ARTHUR_DATA.skills.find((s) => s.id === ARTHUR_SHIELD_ID)!;
@@ -59,6 +59,15 @@ describe('T35.2 契约之盾', () => {
     expect(inst.phase).toBe('active');
     expect(buffs.moveSpeedMultiplier()).toBeCloseTo(1 + (json.effect.moveSpeedBoost ?? 0), 5);
     expect(buffs.peekNextAttackBonus()).toBe(1);
+    const enhancement = buffs.skillEnhancements(ARTHUR_AUTO_ATTACK_ID)[0];
+    expect(enhancement?.charges).toBe(1);
+    expect(enhancement?.effects[0]).toEqual({
+      kind: 'dash',
+      distance: json.effect.enhancedAttackDashDistance,
+      speed: json.effect.enhancedAttackDashSpeed,
+      acquireRange: json.effect.enhancedAttackAcquireRange,
+      targeting: 'locked-or-forward',
+    });
 
     buffs.tick(json.effect.duration ?? 0);
     expect(buffs.moveSpeedMultiplier()).toBe(1);
@@ -66,8 +75,7 @@ describe('T35.2 契约之盾', () => {
 
   it('普攻伤害不受契约之盾影响(无 nextAttackBonus)', () => {
     const aa = loadArthurSkills().find((s) => s.id === ARTHUR_AUTO_ATTACK_ID)!;
-    const baseDmg = ARTHUR_DATA.skills.find((s) => s.id === ARTHUR_AUTO_ATTACK_ID)!
-      .effect.damage!;
+    const baseDmg = ARTHUR_DATA.stats.attackDamage;
 
     const caster = mkUnit('player', 0, 0);
     const target = mkUnit('dummy', 0, -1);
@@ -83,6 +91,28 @@ describe('T35.2 契约之盾', () => {
 
     applyDamage([target], inst.damage);
     expect(target.hp).toBe(1000 - baseDmg);
+  });
+
+  it('攻击力状态栈会修改普攻的有效伤害', () => {
+    const aa = loadArthurSkills().find((s) => s.id === ARTHUR_AUTO_ATTACK_ID)!;
+    const caster = mkUnit('player', 0, 0);
+    const target = mkUnit('dummy', 0, -1);
+    target.team = 'neutral';
+    const world = mkWorld([caster, target]);
+    const buffs = createBuffBag();
+    buffs.apply({
+      id: 'attack-up',
+      kind: 'attackPower',
+      value: 0.2,
+      duration: 3,
+    });
+    const inst = startSkill(aa, caster, { forwardRad: 0 });
+
+    inst.tick(0.05, mkCtx(caster, world, buffs));
+    expect(inst.damage[0]?.damage).toBeCloseTo(
+      ARTHUR_DATA.stats.attackDamage * 1.2,
+      5,
+    );
   });
 
   it('arthurSkillByHotkey(1) 带 onActivate', () => {

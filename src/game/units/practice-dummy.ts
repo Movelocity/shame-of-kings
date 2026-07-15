@@ -7,7 +7,7 @@ import type { Unit } from '../skills/types';
 export const PRACTICE_DUMMY_ID = 'practice-dummy';
 export const PRACTICE_DUMMY_HP_MAX = 1000;
 /** 存活时每秒自动回复生命值(未满血时生效) */
-export const PRACTICE_DUMMY_REGEN_PER_SEC = 10;
+export const PRACTICE_DUMMY_REGEN_PER_SEC = 50;
 export const PRACTICE_DUMMY_POSITION = { x: 0, z: 0 } as const;
 
 /** 创建木人桩 Unit;isStatic=true,hp=hpMax */

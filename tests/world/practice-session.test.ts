@@ -58,8 +58,7 @@ describe('createPracticeSession', () => {
     const player = makePlayer({ x: 0, z: -1.5 });
     const dummy = createPracticeDummy();
     const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
-    const aaDamage =
-      ARTHUR_DATA.skills.find((s) => s.id === 'auto-attack')?.effect.damage ?? 0;
+    const aaDamage = ARTHUR_DATA.stats.attackDamage;
 
     session.requestAutoAttack();
 
@@ -83,6 +82,82 @@ describe('createPracticeSession', () => {
 
     const regenAmount = PRACTICE_DUMMY_REGEN_PER_SEC * dt * frameCount;
     expect(hpBefore - dummy.hp).toBeCloseTo(aaDamage - regenAmount, 5);
+  });
+
+  it('无可锁目标时也能空放普攻', () => {
+    const player = makePlayer({ x: 0, z: 20 });
+    const session = createPracticeSession({ playerUnit: player });
+
+    expect(session.requestAutoAttack()).toBe(true);
+    expect(session.skillBook.active?.skill.id).toBe('auto-attack');
+  });
+
+  it('普攻只在攻击范围 1.3 倍内自动锁敌追击，超出则空 A', () => {
+    const player = makePlayer({ x: 0, z: 0 });
+    const dummy = createPracticeDummy();
+    dummy.position = { x: 0, z: -3 };
+    const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
+
+    expect(session.requestAutoAttack()).toBe(true);
+    // 攻击距离 2，自动获取距离 2.6；3 单位处的目标不会建立追击意图。
+    expect(session.skillBook.active?.skill.id).toBe('auto-attack');
+    const pre = session.preTick({
+      dt: 1 / 60,
+      manualMove: false,
+      playerX: 0,
+      playerZ: 0,
+    });
+    expect(pre.moveTarget).toBeNull();
+  });
+
+  it('一技能本身不 dash，下一次普攻改为 dash 并消耗强化', () => {
+    const player = makePlayer({ x: 0, z: 0 });
+    const dummy = createPracticeDummy();
+    dummy.position = { x: 0, z: -5 };
+    const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
+
+    expect(session.tryCastHotkey('1')).toBe(true);
+    session.postTick({ dt: 0.15, playerX: 0, playerZ: 0, facingRad: 0 });
+    expect(player.position).toEqual({ x: 0, z: 0 });
+    expect(session.heroState.skillEnhancements('auto-attack')).toHaveLength(1);
+
+    // 让一技能结束，再请求锁敌普攻。
+    session.postTick({ dt: 0.2, playerX: 0, playerZ: 0, facingRad: 0 });
+    session.postTick({ dt: 0.2, playerX: 0, playerZ: 0, facingRad: 0 });
+    expect(session.requestAutoAttack()).toBe(true);
+    session.preTick({ dt: 1 / 60, manualMove: false, playerX: 0, playerZ: 0 });
+    session.postTick({ dt: 1 / 60, playerX: 0, playerZ: 0, facingRad: 0 });
+
+    expect(player.position.z).toBeLessThan(0);
+    expect(session.skillBook.active?.skill.displacement).toBe('dash');
+    expect(session.heroState.skillEnhancements('auto-attack')).toHaveLength(0);
+  });
+
+  it('英雄状态栈可将 dash 强化挂给任意技能并按次数消耗', () => {
+    const player = makePlayer({ x: 0, z: 0 });
+    const session = createPracticeSession({ playerUnit: player });
+    session.heroState.applySkillEnhancement({
+      id: 'test:s2-dash',
+      sourceSkillId: 'test-source',
+      targetSkillId: 'whirlwind-strike',
+      duration: 5,
+      charges: 1,
+      effects: [
+        {
+          kind: 'dash',
+          distance: 1.5,
+          speed: 15,
+          acquireRange: 1.5,
+          targeting: 'forward',
+        },
+      ],
+    });
+
+    expect(session.tryCastHotkey('2')).toBe(true);
+    expect(session.skillBook.active?.skill.displacement).toBe('dash');
+    expect(session.skillBook.active?.skill.dashDistance).toBe(1.5);
+    expect(session.skillBook.active?.skill.dashSpeed).toBe(15);
+    expect(session.heroState.skillEnhancements('whirlwind-strike')).toHaveLength(0);
   });
 
   it('postTick 在固定 dt 下可推进技能阶段', () => {

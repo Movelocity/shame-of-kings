@@ -26,7 +26,9 @@ export type HeroSkillEffectData =
       kind: 'move-speed-buff';
       moveSpeedBoost: number;
       duration: number;
-      acquireRange: number;
+      enhancedAttackDashDistance: number;
+      enhancedAttackDashSpeed: number;
+      enhancedAttackAcquireRange: number;
     }
   | {
       kind: 'periodic-damage';
@@ -38,12 +40,14 @@ export type HeroSkillEffectData =
       kind: 'dash-landing-knockup';
       damage: number;
       dashDistance: number;
+      dashSpeed: number;
+      acquireRange: number;
       knockupDuration: number;
     }
   | {
       kind: 'attack-damage';
       attackRange: number;
-      acquireRange: number;
+      autoAcquireRangeMultiplier: number;
     };
 
 /** 英雄 kit JSON 顶层契约 */
@@ -84,7 +88,7 @@ function assertSkillSlot(heroId: string, value: unknown): asserts value is HeroS
   if (!HERO_HOTKEYS.includes(value.hotkey as HeroHotkey)) {
     throw new Error(`hero kit "${heroId}": invalid hotkey for skill "${value.id}"`);
   }
-  if (!isHitShape(value.hit) || !['ground', 'dash', 'none'].includes(value.displacement as string)) {
+  if (!isHitShape(value.hit) || !['ground', 'dash', 'teleport', 'none'].includes(value.displacement as string)) {
     throw new Error(`hero kit "${heroId}": invalid targeting for skill "${value.id}"`);
   }
   for (const key of ['castTime', 'activeTime', 'recoveryTime', 'cooldown'] as const) {
@@ -103,10 +107,22 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
     throw new Error(`hero kit "${heroId}": skill "${skillId}" requires an effect.kind`);
   }
   const numericFields: Record<HeroSkillEffectData['kind'], readonly string[]> = {
-    'move-speed-buff': ['moveSpeedBoost', 'duration', 'acquireRange'],
+    'move-speed-buff': [
+      'moveSpeedBoost',
+      'duration',
+      'enhancedAttackDashDistance',
+      'enhancedAttackDashSpeed',
+      'enhancedAttackAcquireRange',
+    ],
     'periodic-damage': ['damage', 'damageInterval', 'damageTicks'],
-    'dash-landing-knockup': ['damage', 'dashDistance', 'knockupDuration'],
-    'attack-damage': ['attackRange', 'acquireRange'],
+    'dash-landing-knockup': [
+      'damage',
+      'dashDistance',
+      'dashSpeed',
+      'acquireRange',
+      'knockupDuration',
+    ],
+    'attack-damage': ['attackRange', 'autoAcquireRangeMultiplier'],
   };
   const fields = numericFields[effect.kind as HeroSkillEffectData['kind']];
   if (!fields) throw new Error(`hero kit "${heroId}": unknown effect "${effect.kind}"`);
@@ -114,6 +130,13 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
     if (typeof effect[field] !== 'number' || effect[field] < 0) {
       throw new Error(`hero kit "${heroId}": effect.${field} must be a non-negative number`);
     }
+  }
+  if (
+    effect.kind === 'dash-landing-knockup' &&
+    (!((effect.dashSpeed as number) > 0) ||
+      !Number.isFinite(effect.dashSpeed as number))
+  ) {
+    throw new Error(`hero kit "${heroId}": effect.dashSpeed must be positive`);
   }
 }
 

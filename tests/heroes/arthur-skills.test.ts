@@ -3,6 +3,7 @@ import {
   ARTHUR_AOE_RADIUS,
   ARTHUR_DATA,
   ARTHUR_SHIELD_ID,
+  getArthurAutoAttackRanges,
   loadArthurSkills,
 } from '../../src/game/heroes/arthur';
 import { createBuffBag } from '../../src/game/buffs/buff-bag';
@@ -45,7 +46,16 @@ function mkCtx(caster: Unit, world: WorldLike, buffs = createBuffBag()): SkillCo
 }
 
 describe('亚瑟技能机制', () => {
-  it('一技能无目标时仅挂移速 buff', () => {
+  it('普攻自动获取范围恒为攻击范围的 1.3 倍', () => {
+    const ranges = getArthurAutoAttackRanges();
+    expect(ranges.acquireRange).toBeCloseTo(ranges.attackRange * 1.3, 5);
+    const shield = ARTHUR_DATA.skills.find((s) => s.id === ARTHUR_SHIELD_ID)!;
+    expect(shield.effect.enhancedAttackAcquireRange).toBeGreaterThan(
+      ranges.acquireRange,
+    );
+  });
+
+  it('一技能无目标时挂移速和下次普攻 dash，自身不位移', () => {
     const shield = loadArthurSkills().find((s) => s.id === ARTHUR_SHIELD_ID)!;
     const json = ARTHUR_DATA.skills.find((s) => s.id === ARTHUR_SHIELD_ID)!;
     const caster = mkUnit('player');
@@ -56,11 +66,19 @@ describe('亚瑟技能机制', () => {
 
     inst.tick(shield.castTime, ctx);
     expect(inst.phase).toBe('active');
+    expect(caster.position).toEqual({ x: 0, z: 0 });
     expect(buffs.moveSpeedMultiplier()).toBeCloseTo(
       1 + (json.effect.moveSpeedBoost ?? 0),
       5,
     );
     expect(buffs.peekNextAttackBonus()).toBe(1);
+    expect(buffs.skillEnhancements('auto-attack')[0]?.effects[0]).toEqual({
+      kind: 'dash',
+      distance: json.effect.enhancedAttackDashDistance,
+      speed: json.effect.enhancedAttackDashSpeed,
+      acquireRange: json.effect.enhancedAttackAcquireRange,
+      targeting: 'locked-or-forward',
+    });
   });
 
   it('二技能 active 内按 interval 间歇 tick 4 次', () => {
@@ -87,8 +105,30 @@ describe('亚瑟技能机制', () => {
     }
 
     expect(totalDamage).toBe(perTick * ticks);
+    expect(inst.hitboxActivations).toBe(ticks);
     applyDamage([dummy], [{ targetId: 'dummy', damage: totalDamage, isCrit: false }]);
     expect(dummy.hp).toBe(1000 - totalDamage);
+  });
+
+  it('二技能每个周期重新生成圆形伤害盒，不把持续伤害挂在目标上', () => {
+    const whirl = loadArthurSkills().find((s) => s.id === 'whirlwind-strike')!;
+    const caster = mkUnit('player', 0, 0);
+    const dummy = mkUnit('dummy', 0, -10, 'neutral');
+    const world = mkWorld([caster, dummy]);
+    const ctx = mkCtx(caster, world);
+    const inst = startSkill(whirl, caster, { forwardRad: 0 });
+
+    inst.tick(whirl.castTime, ctx);
+    inst.tick(whirl.damageInterval!, ctx);
+    expect(inst.damage).toHaveLength(0);
+
+    dummy.position.z = -1;
+    inst.tick(whirl.damageInterval!, ctx);
+    expect(inst.damage.some((d) => d.targetId === dummy.id)).toBe(true);
+
+    dummy.position.z = -10;
+    inst.tick(whirl.damageInterval!, ctx);
+    expect(inst.damage).toHaveLength(0);
   });
 
   it('三技能落地圈击飞圈内敌人', () => {
@@ -98,7 +138,8 @@ describe('亚瑟技能机制', () => {
 
     const caster = mkUnit('player', 0, 0);
     const dummy = mkUnit('dummy', 0, -5, 'neutral');
-    const world = mkWorld([caster, dummy]);
+    const outside = mkUnit('outside', 0, -10, 'neutral');
+    const world = mkWorld([caster, dummy, outside]);
     const ctx = mkCtx(caster, world);
     const inst = startSkill(judgement, caster, { forwardRad: 0 });
 
@@ -108,6 +149,10 @@ describe('亚瑟技能机制', () => {
     expect(inst.phase).toBe('recovery');
     expect(dummy.cc?.kind).toBe('knockup');
     expect(dummy.cc?.remaining).toBeCloseTo(knockupDuration, 5);
-    expect(ARTHUR_AOE_RADIUS).toBe(json.effect.aoeRadius);
+    expect(inst.damage.some((d) => d.targetId === dummy.id)).toBe(true);
+    expect(outside.cc).toBeUndefined();
+    expect(inst.damage.some((d) => d.targetId === outside.id)).toBe(false);
+    expect(inst.hitboxActivations).toBe(1);
+    expect(judgement.hit).toEqual({ kind: 'circle', radius: ARTHUR_AOE_RADIUS });
   });
 });

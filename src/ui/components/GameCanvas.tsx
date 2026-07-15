@@ -199,7 +199,7 @@ export function GameCanvas({
     gameScene.scene.add(floaters.group);
     const hitboxVfx = createHitboxVfx();
     gameScene.scene.add(hitboxVfx.group);
-    const hitboxFlashed = new WeakSet<SkillInstance>();
+    const shownHitboxActivations = new WeakMap<SkillInstance, number>();
 
     const unsubscribeDamage = session.world.subscribeDamage((results) => {
       for (const r of results) {
@@ -290,17 +290,16 @@ export function GameCanvas({
         });
 
         const activeInst = session.skillBook.active;
-        if (
-          activeInst &&
-          activeInst.phase === 'active' &&
-          !hitboxFlashed.has(activeInst)
-        ) {
-          hitboxFlashed.add(activeInst);
-          hitboxVfx.spawn(
-            activeInst.skill.hit,
-            activeInst.origin,
-            activeInst.forwardRad,
-          );
+        if (activeInst) {
+          const shown = shownHitboxActivations.get(activeInst) ?? 0;
+          for (let i = shown; i < activeInst.hitboxActivations; i++) {
+            hitboxVfx.spawn(
+              activeInst.skill.hit,
+              playerUnit.position,
+              activeInst.forwardRad,
+            );
+          }
+          shownHitboxActivations.set(activeInst, activeInst.hitboxActivations);
         }
         if (post.dummyRingPulse) {
           gameScene.dummy.setRingPulse(1);
