@@ -1,7 +1,7 @@
 // practice-session:reset 不变量 + 热键 cast 可启动 instance
 import { describe, expect, it } from 'vitest';
 import { ARTHUR_DATA } from '../../src/game/heroes/arthur';
-import { createPracticeDummy } from '../../src/game/units/practice-dummy';
+import { createPracticeDummy, PRACTICE_DUMMY_REGEN_PER_SEC } from '../../src/game/units/practice-dummy';
 import { createPracticeSession } from '../../src/game/world/practice-session';
 import type { Unit } from '../../src/game/skills/types';
 
@@ -64,22 +64,25 @@ describe('createPracticeSession', () => {
     session.requestAutoAttack();
 
     const hpBefore = dummy.hp;
-    for (let i = 0; i < 20; i++) {
+    const dt = 1 / 60;
+    const frameCount = 20;
+    for (let i = 0; i < frameCount; i++) {
       session.preTick({
-        dt: 1 / 60,
+        dt,
         manualMove: false,
         playerX: player.position.x,
         playerZ: player.position.z,
       });
       session.postTick({
-        dt: 1 / 60,
+        dt,
         playerX: player.position.x,
         playerZ: player.position.z,
         facingRad: 0,
       });
     }
 
-    expect(hpBefore - dummy.hp).toBe(aaDamage);
+    const regenAmount = PRACTICE_DUMMY_REGEN_PER_SEC * dt * frameCount;
+    expect(hpBefore - dummy.hp).toBeCloseTo(aaDamage - regenAmount, 5);
   });
 
   it('postTick 在固定 dt 下可推进技能阶段', () => {
@@ -100,5 +103,54 @@ describe('createPracticeSession', () => {
     });
 
     expect(session.skillBook.active?.phase).not.toBe('done');
+  });
+
+  it('木人桩未满血时每帧自动回血', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer() });
+    const dummy = session.dummyUnit;
+    dummy.hp = 500;
+
+    session.postTick({
+      dt: 1,
+      playerX: 2,
+      playerZ: 10,
+      facingRad: 0,
+    });
+
+    expect(dummy.hp).toBe(500 + PRACTICE_DUMMY_REGEN_PER_SEC);
+  });
+
+  it('木人桩 hp 归零时从世界移除', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer() });
+    const dummy = session.dummyUnit;
+    dummy.hp = 0;
+
+    const post = session.postTick({
+      dt: 1 / 60,
+      playerX: 2,
+      playerZ: 10,
+      facingRad: 0,
+    });
+
+    expect(post.dummyRemoved).toBe(true);
+    expect(session.world.getUnit(dummy.id)).toBeNull();
+  });
+
+  it('resetWorld 可恢复已死亡木人桩', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer() });
+    const dummy = session.dummyUnit;
+    dummy.hp = 0;
+    session.postTick({
+      dt: 1 / 60,
+      playerX: 2,
+      playerZ: 10,
+      facingRad: 0,
+    });
+    expect(session.world.getUnit(dummy.id)).toBeNull();
+
+    session.resetWorld();
+
+    expect(session.world.getUnit(dummy.id)).toBe(dummy);
+    expect(dummy.hp).toBe(dummy.hpMax);
   });
 });

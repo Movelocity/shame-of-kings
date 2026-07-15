@@ -14,7 +14,10 @@ import {
 import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
 import type { DamageResult, SkillInstance, Unit } from '../skills/types';
-import { createPracticeDummy } from '../units/practice-dummy';
+import {
+  createPracticeDummy,
+  PRACTICE_DUMMY_REGEN_PER_SEC,
+} from '../units/practice-dummy';
 import { createWorldState, type WorldStateHandle } from './WorldState';
 
 export interface PracticeSessionInit {
@@ -46,6 +49,8 @@ export interface PracticePostTickInput {
 export interface PracticePostTickResult {
   completedSkills: readonly SkillInstance[];
   dummyRingPulse: boolean;
+  /** 本帧木人桩 hp 归零并从世界移除 */
+  dummyRemoved: boolean;
   dashSync: { x: number; z: number } | null;
 }
 
@@ -83,7 +88,28 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const aaRanges = getArthurAutoAttackRanges();
   const shieldAcquireRange = getArthurShieldAcquireRange();
 
-  const allUnits = (): Unit[] => [playerUnit, dummyUnit];
+  let dummyAlive = true;
+
+  const allUnits = (): Unit[] =>
+    dummyAlive ? [playerUnit, dummyUnit] : [playerUnit];
+
+  const removeDeadDummy = (): boolean => {
+    if (!dummyAlive || dummyUnit.hp > 0) return false;
+    world.unregister(dummyUnit.id);
+    dummyUnit.cc = undefined;
+    dummyAlive = false;
+    aaIntent.cancel();
+    faceChargeIntent.cancel();
+    return true;
+  };
+
+  const tickDummyRegen = (dt: number): void => {
+    if (!dummyAlive || dummyUnit.hp <= 0 || dummyUnit.hp >= dummyUnit.hpMax) return;
+    dummyUnit.hp = Math.min(
+      dummyUnit.hpMax,
+      dummyUnit.hp + PRACTICE_DUMMY_REGEN_PER_SEC * dt,
+    );
+  };
 
   return {
     world,
@@ -127,6 +153,10 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     },
 
     resetWorld() {
+      if (!dummyAlive) {
+        world.register(dummyUnit);
+        dummyAlive = true;
+      }
       dummyUnit.hp = dummyUnit.hpMax;
       skillBook.reset();
       buffs.clear();
@@ -209,14 +239,17 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       });
 
       let dummyRingPulse = false;
+      let dummyRemoved = false;
       let dashSync: { x: number; z: number } | null = null;
 
       const applyFrameDamage = (inst: SkillInstance): void => {
         const results = inst.damage;
         if (results.length === 0) return;
-        applyDamage([dummyUnit, playerUnit], results);
+        const targets = dummyAlive ? [dummyUnit, playerUnit] : [playerUnit];
+        applyDamage(targets, results);
         world.notifyDamage(results);
         dummyRingPulse = true;
+        if (removeDeadDummy()) dummyRemoved = true;
         (inst as SkillInstance & { damage: DamageResult[] }).damage = [];
       };
 
@@ -240,7 +273,10 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         }
       }
 
-      return { completedSkills, dummyRingPulse, dashSync };
+      tickDummyRegen(dt);
+      if (removeDeadDummy()) dummyRemoved = true;
+
+      return { completedSkills, dummyRingPulse, dummyRemoved, dashSync };
     },
 
     getHudButtons() {

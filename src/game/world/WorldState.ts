@@ -36,6 +36,8 @@ export interface WorldStateHandle extends WorldLike {
   subscribeDamage(fn: DamageListener): () => void;
   /** 注册新 unit(M2 阶段 P2 之前不需要;留接口) */
   register(unit: Unit): void;
+  /** 从注册表移除 unit(死亡/离场) */
+  unregister(unitId: string): void;
   /** 拿 unit(找不到返 null) */
   getUnit(id: string): Unit | null;
   /** 维护 damageListener 通知 */
@@ -69,6 +71,9 @@ export function createWorldState(init: WorldStateInit): WorldStateHandle {
     },
     register(unit) {
       unitsMap.set(unit.id, unit);
+    },
+    unregister(unitId) {
+      unitsMap.delete(unitId);
     },
     getUnit(id) {
       return unitsMap.get(id) ?? null;

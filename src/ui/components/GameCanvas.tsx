@@ -21,7 +21,10 @@ import {
   arthurSkillByHotkey,
   ARTHUR_DATA,
 } from '../../game/heroes/arthur';
-import { createPracticeDummy } from '../../game/units/practice-dummy';
+import {
+  createPracticeDummy,
+  PRACTICE_DUMMY_ID,
+} from '../../game/units/practice-dummy';
 import {
   createPracticeSession,
   type PracticeSession,
@@ -161,9 +164,26 @@ export function GameCanvas({
     const session = createPracticeSession({ playerUnit, dummyUnit });
     sessionRef.current = session;
 
+    const restoreDummyVisual = (): void => {
+      if (!gameScene.dummy.root.parent) {
+        gameScene.scene.add(gameScene.dummy.root);
+      }
+      gameScene.dummy.root.visible = true;
+      hpBars.register(session.dummyUnit, FACTION_COLORS.enemy, 1.4, 1.8, 0.2);
+    };
+
+    const removeDummyVisual = (): void => {
+      gameScene.dummy.root.visible = false;
+      if (gameScene.dummy.root.parent) {
+        gameScene.scene.remove(gameScene.dummy.root);
+      }
+      hpBars.unregister(PRACTICE_DUMMY_ID);
+    };
+
     const resetWorld = (): void => {
       gameScene.reset();
       session.resetWorld();
+      restoreDummyVisual();
       gameScene.controller.setSpeedMultiplier(1);
       gameScene.dummy.setRingPulse(0);
       setAimState(null);
@@ -284,6 +304,9 @@ export function GameCanvas({
         }
         if (post.dummyRingPulse) {
           gameScene.dummy.setRingPulse(1);
+        }
+        if (post.dummyRemoved) {
+          removeDummyVisual();
         }
         if (post.dashSync) {
           gameScene.player.setPosition(

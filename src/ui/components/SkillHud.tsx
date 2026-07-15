@@ -79,15 +79,15 @@ interface SkillHudItem {
   upgrade?: boolean;
 }
 
-interface AttackModeHudItem {
-  id: string;
-  label: string;
-  hotkey: string;
-  priority: Exclude<AutoAttackPriority, 'default'>;
-  x: number;
-  y: number;
-  size: number;
-}
+// interface AttackModeHudItem {
+//   id: string;
+//   label: string;
+//   hotkey: string;
+//   priority: Exclude<AutoAttackPriority, 'default'>;
+//   x: number;
+//   y: number;
+//   size: number;
+// }
 
 const THREE_SKILL_LAYOUT: SkillHudItem[] = [
   { id: 'attack', label: '普攻', slotHotkey: '0', kind: 'attack', x: -30, y: -10, size: 90 },
@@ -110,10 +110,10 @@ const FOUR_SKILL_LAYOUT: SkillHudItem[] = [
   { id: 'spell', label: '闪现', slotHotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
 ];
 
-const DESKTOP_ATTACK_MODE_LAYOUT: AttackModeHudItem[] = [
-  { id: 'attack-minion', label: '优先小兵', hotkey: 'K', priority: 'minion', x: -30, y: 52, size: 46 },
-  { id: 'attack-tower', label: '优先防御塔', hotkey: 'L', priority: 'tower', x: 36, y: 52, size: 46 },
-];
+// const DESKTOP_ATTACK_MODE_LAYOUT: AttackModeHudItem[] = [
+//   { id: 'attack-minion', label: '', hotkey: 'K', priority: 'minion', x: -110, y: 22, size: 40 },
+//   { id: 'attack-tower', label: '', hotkey: 'L', priority: 'tower', x: 22, y: -70, size: 40 },
+// ];
 
 const DEFAULT_CAST_MODES: Readonly<Record<string, 'instant' | 'targeted'>> = {
   '0': 'instant',
@@ -127,7 +127,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
   {
     inputMode = 'mobile',
     onPressStart,
-    onAttackModePress,
+    // onAttackModePress,
     onPressEnd,
     aimingSlotHotkey = null,
     castModes = DEFAULT_CAST_MODES,
@@ -258,7 +258,6 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         onPointerCancel={onCancel}
       >
         <span className="skill-orb__icon">{displayHotkey}</span>
-        <span className="skill-orb__label">{item.label}</span>
         {item.upgrade && <span className="skill-orb__upgrade">+</span>}
         {isCooling && (
           <span className="skill-orb__cooldown">
@@ -269,35 +268,36 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
               : '·'}
           </span>
         )}
-      </button>
-    );
-  }
-
-  function renderAttackModeOrb(item: AttackModeHudItem): JSX.Element {
-    return (
-      <button
-        key={item.id}
-        type="button"
-        className="skill-orb skill-orb--attack"
-        style={
-          {
-            '--skill-x': `${item.x}px`,
-            '--skill-y': `${item.y}px`,
-            '--skill-size': `${item.size}px`,
-          } as CSSProperties
-        }
-        aria-label={item.label}
-        onPointerDown={(e) => {
-          if (e.pointerType === 'mouse' && e.button !== 0) return;
-          e.preventDefault();
-          onAttackModePress?.(item.priority);
-        }}
-      >
-        <span className="skill-orb__icon">{item.hotkey}</span>
         <span className="skill-orb__label">{item.label}</span>
       </button>
     );
   }
+
+  // function renderAttackModeOrb(item: AttackModeHudItem): JSX.Element {
+  //   return (
+  //     <button
+  //       key={item.id}
+  //       type="button"
+  //       className="skill-orb skill-orb--attack"
+  //       style={
+  //         {
+  //           '--skill-x': `${item.x}px`,
+  //           '--skill-y': `${item.y}px`,
+  //           '--skill-size': `${item.size}px`,
+  //         } as CSSProperties
+  //       }
+  //       aria-label={item.label}
+  //       onPointerDown={(e) => {
+  //         if (e.pointerType === 'mouse' && e.button !== 0) return;
+  //         e.preventDefault();
+  //         onAttackModePress?.(item.priority);
+  //       }}
+  //     >
+  //       <span className="skill-orb__icon">{item.hotkey}</span>
+  //       <span className="skill-orb__label">{item.label}</span>
+  //     </button>
+  //   );
+  // }
 
   return (
     <section className="skill-hud" aria-label="Skill layout preview">
@@ -337,8 +337,8 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         >
           取消
         </div>
-        {inputMode === 'desktop' &&
-          DESKTOP_ATTACK_MODE_LAYOUT.map((item) => renderAttackModeOrb(item))}
+        {/* {inputMode === 'desktop' &&
+          DESKTOP_ATTACK_MODE_LAYOUT.map((item) => renderAttackModeOrb(item))} */}
         {items.map((item) => {
           const isArthur = /^[0-4]$/.test(item.slotHotkey);
           if (isArthur) return renderArthurOrb(item);

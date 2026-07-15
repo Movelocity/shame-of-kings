@@ -74,11 +74,6 @@ body,
   bottom: -20px;
   width: 318px;
   height: 204px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 76% 72%, rgba(255, 255, 255, 0.18), transparent 24%),
-    radial-gradient(circle at 72% 72%, rgba(21, 30, 43, 0.54), transparent 68%);
-  filter: blur(1px);
 }
 
 .skill-hud__cancel {
@@ -167,7 +162,7 @@ body,
   z-index: 2;
   border-radius: 50%;
   background: conic-gradient(
-    rgba(4, 8, 15, 0.76) 0deg var(--cooldown-angle, 360deg),
+    rgba(4, 8, 15, 0.66) 0deg var(--cooldown-angle, 360deg),
     transparent var(--cooldown-angle, 360deg)
   );
   pointer-events: none;
@@ -178,9 +173,10 @@ body,
   z-index: 1;
   display: grid;
   place-items: center;
-  min-width: 1.5em;
-  height: 1.5em;
+  min-width: 1.4em;
+  height: 1.4em;
   font: 900 22px/1 system-ui, -apple-system, sans-serif;
+  color: #ffffffb5;
 }
 
 .skill-orb--utility .skill-orb__icon {
@@ -189,7 +185,7 @@ body,
 
 .skill-orb__label {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   max-width: 100%;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.88);
