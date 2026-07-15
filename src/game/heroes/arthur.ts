@@ -27,15 +27,14 @@ export interface ArthurData extends HeroKitData {
   };
 }
 
+assertFourSkillKit(arthurJson);
 const data: ArthurData = arthurJson as ArthurData;
-assertFourSkillKit(data);
 
-/** 亚瑟范围技能 canonical 半径(二技能 JSON) */
+/** 亚瑟范围技能 canonical 半径(二技能 hit shape) */
 export function getArthurAoeRadius(): number {
   const whirl = data.skills.find((s) => s.id === 'whirlwind-strike');
-  if (whirl?.effect.aoeRadius !== undefined) return whirl.effect.aoeRadius;
   if (whirl?.hit.kind === 'circle') return (whirl.hit as { radius: number }).radius;
-  return 3;
+  throw new Error('arthur whirlwind-strike must use a circle hit shape');
 }
 
 export const ARTHUR_AOE_RADIUS = getArthurAoeRadius();
@@ -66,13 +65,8 @@ function effectOf(id: string): HeroSkillEffectData {
 
 /** 装载亚瑟 4 技能:从 JSON 数据 → 运行时 Skill 实例 */
 export function loadArthurSkills(): readonly Skill[] {
-  const shieldFx = effectOf('shield-of-pact');
-  const whirlFx = effectOf('whirlwind-strike');
   const whirlSlot = skillSlot('whirlwind-strike');
-  const judgementFx = effectOf('sacred-judgement');
-  const aaFx = effectOf('auto-attack');
-
-  const aoeRadius = whirlFx.aoeRadius ?? ARTHUR_AOE_RADIUS;
+  const aoeRadius = ARTHUR_AOE_RADIUS;
   const whirlHit =
     whirlSlot.hit.kind === 'circle'
       ? { kind: 'circle' as const, radius: aoeRadius }
@@ -92,41 +86,35 @@ export function loadArthurSkills(): readonly Skill[] {
       castMode: s.castMode ?? 'instant',
     };
 
-    if (s.id === 'shield-of-pact') {
-      const moveSpeedBoost = shieldFx.moveSpeedBoost ?? 0;
-      const duration = shieldFx.duration ?? 0;
+    if (s.effect.kind === 'move-speed-buff') {
       return makeSkill({
         ...base,
         onActivate(ctx) {
           if (!ctx.buffs) return;
           applyMoveSpeedBuff(ctx.buffs, {
             sourceId: s.id,
-            moveSpeedBoost,
-            duration,
+            moveSpeedBoost: s.effect.moveSpeedBoost,
+            duration: s.effect.duration,
           });
         },
       });
     }
 
-    if (s.id === 'whirlwind-strike' && whirlFx.damage) {
-      const interval = whirlFx.damageInterval ?? 0.2;
-      const ticks = whirlFx.damageTicks ?? 4;
+    if (s.effect.kind === 'periodic-damage') {
       return makeSkill({
         ...base,
-        damageInterval: interval,
-        damageTicks: ticks,
-        damage: perTickDamage(whirlFx.damage),
+        damageInterval: s.effect.damageInterval,
+        damageTicks: s.effect.damageTicks,
+        damage: perTickDamage(s.effect.damage),
       });
     }
 
-    if (s.id === 'sacred-judgement' && judgementFx.damage) {
-      const knockupDuration = judgementFx.knockupDuration ?? 0.6;
-      const landRadius = judgementFx.aoeRadius ?? aoeRadius;
+    if (s.effect.kind === 'dash-landing-knockup') {
       return makeSkill({
         ...base,
-        damage: arthurDamage(judgementFx.damage),
+        damage: arthurDamage(s.effect.damage),
         onLand(ctx) {
-          const circleHit = { kind: 'circle' as const, radius: landRadius };
+          const circleHit = { kind: 'circle' as const, radius: aoeRadius };
           const hits = resolveHits(
             ctx.world,
             ctx.caster,
@@ -135,17 +123,17 @@ export function loadArthurSkills(): readonly Skill[] {
           );
           for (const h of hits) {
             if (!h.target || h.target.id === ctx.caster.id) continue;
-            applyKnockup(h.target, knockupDuration);
+            applyKnockup(h.target, s.effect.knockupDuration);
           }
           return [];
         },
       });
     }
 
-    if (s.id === 'auto-attack' && aaFx.damage) {
+    if (s.effect.kind === 'attack-damage') {
       return makeSkill({
         ...base,
-        damage: arthurDamage(aaFx.damage),
+        damage: arthurDamage(data.stats.attackDamage),
       });
     }
 
@@ -171,15 +159,15 @@ export function getArthurAutoAttackRanges(): {
 } {
   const aa = data.skills.find((s) => s.id === ARTHUR_AUTO_ATTACK_ID);
   return {
-    attackRange: aa?.effect.attackRange ?? 2,
-    acquireRange: aa?.effect.acquireRange ?? 8,
+    attackRange: aa?.effect.kind === 'attack-damage' ? aa.effect.attackRange : 2,
+    acquireRange: aa?.effect.kind === 'attack-damage' ? aa.effect.acquireRange : 8,
   };
 }
 
 /** 一技能突脸锁敌范围 */
 export function getArthurShieldAcquireRange(): number {
   const shield = data.skills.find((s) => s.id === ARTHUR_SHIELD_ID);
-  return shield?.effect.acquireRange ?? 8;
+  return shield?.effect.kind === 'move-speed-buff' ? shield.effect.acquireRange : 8;
 }
 
 export type { HeroKitData, HeroSkillSlotData, HeroSkillEffectData };

@@ -46,6 +46,8 @@ export interface SkillHudHandle {
 }
 
 export interface SkillHudProps {
+  /** 当前已加载英雄的技能配置；英雄技能标签和可见槽位以此为准 */
+  heroSkills: readonly SkillHudSkillDefinition[];
   /** 桌面端显示 J/U/I/O/P 与 K/L 普攻方式；移动端显示槽位数字 */
   inputMode?: 'desktop' | 'mobile';
   /** 技能按钮按压回调(slot hotkey: 0–4) */
@@ -65,14 +67,20 @@ export interface SkillHudProps {
   castModes?: Readonly<Record<string, 'instant' | 'targeted'>>;
 }
 
+export interface SkillHudSkillDefinition {
+  hotkey: string;
+  name: string;
+}
+
 type SkillLayoutMode = 'three' | 'four';
 
 interface SkillHudItem {
   id: string;
-  label: string;
+  /** 仅通用按钮使用；英雄技能名称来自 heroSkills 配置。 */
+  label?: string;
   /** 英雄 kit 内部槽位 hotkey(0–4) */
   slotHotkey: string;
-  kind: 'attack' | 'skill' | 'ultimate' | 'utility';
+  kind: 'attack' | 'skill' | 'utility';
   x: number;
   y: number;
   size: number;
@@ -90,21 +98,21 @@ interface SkillHudItem {
 // }
 
 const THREE_SKILL_LAYOUT: SkillHudItem[] = [
-  { id: 'attack', label: '普攻', slotHotkey: '0', kind: 'attack', x: -30, y: -10, size: 90 },
-  { id: 'skill-1', label: '斩击', slotHotkey: '1', kind: 'skill', x: -162, y: -12, size: 80 },
-  { id: 'skill-2', label: '冲锋', slotHotkey: '2', kind: 'skill', x: -96, y: -102, size: 80 },
-  { id: 'skill-3', label: '圣裁', slotHotkey: '3', kind: 'ultimate', x: 4, y: -132, size: 80, upgrade: true },
+  { id: 'attack', slotHotkey: '0', kind: 'attack', x: -30, y: -10, size: 90 },
+  { id: 'skill-1', slotHotkey: '1', kind: 'skill', x: -162, y: -12, size: 80 },
+  { id: 'skill-2', slotHotkey: '2', kind: 'skill', x: -96, y: -102, size: 80 },
+  { id: 'skill-3', slotHotkey: '3', kind: 'skill', x: 4, y: -132, size: 80 },
   { id: 'recall', label: '回城', slotHotkey: 'B', kind: 'utility', x: -388, y: -5, size: 46 },
   { id: 'heal', label: '恢复', slotHotkey: 'H', kind: 'utility', x: -324, y: -5, size: 46 },
   { id: 'spell', label: '闪现', slotHotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
 ];
 
 const FOUR_SKILL_LAYOUT: SkillHudItem[] = [
-  { id: 'attack', label: '普攻', slotHotkey: '0', kind: 'attack', x: 0, y: 0, size: 82 },
-  { id: 'skill-1', label: '斩击', slotHotkey: '1', kind: 'skill', x: -134, y: -4, size: 60 },
-  { id: 'skill-2', label: '冲锋', slotHotkey: '2', kind: 'skill', x: -120, y: -76, size: 60 },
-  { id: 'skill-3', label: '护盾', slotHotkey: '3', kind: 'skill', x: -50, y: -124, size: 60 },
-  { id: 'skill-4', label: '圣裁', slotHotkey: '4', kind: 'ultimate', x: 42, y: -116, size: 66, upgrade: true },
+  { id: 'attack', slotHotkey: '0', kind: 'attack', x: -30, y: -10, size: 90 },
+  { id: 'skill-1', slotHotkey: '1', kind: 'skill', x: -162, y: -12, size: 80 },
+  { id: 'skill-2', slotHotkey: '2', kind: 'skill', x: -96, y: -102, size: 80 },
+  { id: 'skill-3', slotHotkey: '3', kind: 'skill', x: 4, y: -132, size: 80 },
+  { id: 'skill-4', slotHotkey: '4', kind: 'skill', x: 12, y: -166, size: 80 },
   { id: 'recall', label: '回城', slotHotkey: 'B', kind: 'utility', x: -388, y: -5, size: 46 },
   { id: 'heal', label: '恢复', slotHotkey: 'H', kind: 'utility', x: -324, y: -5, size: 46 },
   { id: 'spell', label: '闪现', slotHotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
@@ -125,6 +133,7 @@ const DEFAULT_CAST_MODES: Readonly<Record<string, 'instant' | 'targeted'>> = {
 
 export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function SkillHud(
   {
+    heroSkills,
     inputMode = 'mobile',
     onPressStart,
     // onAttackModePress,
@@ -136,8 +145,13 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
 ): JSX.Element {
   const [mode, setMode] = useState<SkillLayoutMode>('three');
   const items = useMemo(
-    () => (mode === 'three' ? THREE_SKILL_LAYOUT : FOUR_SKILL_LAYOUT),
-    [mode],
+    () =>
+      (mode === 'three' ? THREE_SKILL_LAYOUT : FOUR_SKILL_LAYOUT).filter(
+        (item) =>
+          !/^[0-4]$/.test(item.slotHotkey) ||
+          heroSkills.some((skill) => skill.hotkey === item.slotHotkey),
+      ),
+    [heroSkills, mode],
   );
 
   // 4 个亚瑟技能的 CD/locked 状态:用 useState 持有(频率闸 ~10Hz)
@@ -180,8 +194,10 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     return slotHotkey;
   }
 
-  // 工具:渲染单个亚瑟技能按钮
-  function renderArthurOrb(item: SkillHudItem): JSX.Element {
+  // 英雄技能按钮的名称与可见槽位均由加载的英雄配置决定。
+  function renderHeroSkillOrb(item: SkillHudItem): JSX.Element | null {
+    const heroSkill = heroSkills.find((skill) => skill.hotkey === item.slotHotkey);
+    if (!heroSkill) return null;
     const state = buttonStates.get(item.slotHotkey);
     const cdRemaining = state?.cooldownRemaining ?? 0;
     const isLocked = state?.locked ?? false;
@@ -252,7 +268,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
             '--cooldown-angle': `${cooldownRatio * 360}deg`,
           } as CSSProperties
         }
-        aria-label={item.label}
+        aria-label={heroSkill.name}
         onPointerDown={onDown}
         onPointerUp={onUp}
         onPointerCancel={onCancel}
@@ -268,7 +284,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
               : '·'}
           </span>
         )}
-        <span className="skill-orb__label">{item.label}</span>
+        <span className="skill-orb__label">{heroSkill.name}</span>
       </button>
     );
   }
@@ -340,8 +356,8 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         {/* {inputMode === 'desktop' &&
           DESKTOP_ATTACK_MODE_LAYOUT.map((item) => renderAttackModeOrb(item))} */}
         {items.map((item) => {
-          const isArthur = /^[0-4]$/.test(item.slotHotkey);
-          if (isArthur) return renderArthurOrb(item);
+          const isHeroSkill = /^[0-4]$/.test(item.slotHotkey);
+          if (isHeroSkill) return renderHeroSkillOrb(item);
           const displayHotkey = item.slotHotkey;
           // utility 按钮走 M3 原版静态 JSX
           return (

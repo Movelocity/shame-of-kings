@@ -25,7 +25,7 @@
 
 - `auto-attack-intent` + `findNearestEnemy`：一技能锁最近敌人突脸可复用获取逻辑，新增强化突脸 intent（带 buff 窗口）
 - `SkillInstance` active 阶段：扩展为支持 `tickInterval` 周期性 `resolveHits`（二技能）
-- `makeSkill` + `arthur.ts` loader：亚瑟特例挂在 loader，共享字段进 hero template 类型
+- `makeSkill` + `arthur.ts` loader：loader 只把 `effect.kind` 映射为通用运行时钩子；数值保留在 JSON
 - `createBuffBag`：一技能加速仍走 buff
 - `practice-session` postTick：施加 CC、消费击飞计时
 - `WorldHpBars`：扩展第二行 sprite 或 canvas 绘制状态文案
@@ -34,8 +34,8 @@
 
 | 边界 | 所有者 | 职责 |
 |---|---|---|
-| Hero kit 契约 | `src/game/heroes/hero-kit.ts`（新） | 四槽位 JSON 类型、`loadHeroKit` 校验 hotkey 0–3 |
-| Arthur loader | `arthur.ts` | JSON → `Skill[]`，一技能突脸参数 |
+| Hero kit 契约 | `src/game/heroes/hero-kit.ts`（新） | 四槽位 JSON 类型、运行时校验 hotkey 0–3 与 `effect.kind` |
+| Arthur loader | `arthur.ts` | JSON → `Skill[]`，只编排已定义的通用效果 |
 | CC 状态 | `src/game/combat/unit-cc.ts`（新） | `applyKnockup`、`tickCc`、`clearCc` |
 | 间歇 AoE | `runtime.ts` / `Skill` 可选字段 | active 内按 interval 结算 |
 | 落地二次 AoE | `arthur.ts` 三技能 `onLand` 或 `postActive` 钩子 | 共享 `aoeRadius` |
@@ -55,7 +55,7 @@
 ### Quality Attributes
 
 - **可测试性**：CC tick、interval 伤害次数、锁敌 id 可单测，不依赖 Three
-- **可维护性**：`aoeRadius` 二技能/三技能 JSON 共用一处常量引用
+- **可维护性**：半径只定义在二技能 `hit.radius`，三技能落地圈读取该 canonical 值；效果数值没有第二来源
 - **可扩展性**：`hero-kit.ts` 导出 `HeroSkillSlot` 供未来 `yuange.json` 复用
 - **性能**：间歇 tick 仅 active 单实例，O(units) CC tick 可接受
 
@@ -65,12 +65,12 @@
 
 ## Decisions
 
-1. **四技能模版**：`heroes/<id>.json` MUST 含 `skills` 数组且恰好覆盖 hotkey `0`,`1`,`2`,`3` 各一项；`hero-kit.ts` 提供 `assertFourSkillKit(data)`。替代：继续亚瑟专用 — 拒绝。
+1. **四技能模版**：`heroes/<id>.json` MUST 含 `skills` 数组且恰好覆盖 hotkey `0`,`1`,`2`,`3` 各一项；`hero-kit.ts` 提供 `assertFourSkillKit(data)`，并在加载时校验每个 `effect.kind` 的字段。替代：继续亚瑟专用 — 拒绝。
 2. **一技能**：`cast` 结束后 `active` 开始时挂移速 buff；`cast` 或 `active` 初瞬 **锁 `acquireRange` 内最近敌人** 并写入突脸 intent（复用 `findNearestEnemy`），session preTick 驱动追击 + dash 到位。无敌人：仍获得 buff，不位移。替代：无敌人不施放 — 可选，默认 **有 buff 无位移**。
-3. **二技能**：`hit: circle`，`effect.aoeRadius`（默认 3），`effect.damageInterval`（如 0.2s），`effect.damageTicks`（如 4）；`activeTime >= ticks * interval`。替代：固定 3 hits 单帧 — 拒绝。
-4. **三技能**：`castMode: targeted`；dash 到目标 standoff；进入 recovery 前触发 **落地圈**（同 `aoeRadius`）+ 对命中单位 `applyKnockup(duration)`。替代：仅单体伤害 — 拒绝。
+3. **二技能**：`hit: circle` 的 `radius` 是范围唯一来源；`effect.kind: periodic-damage` 携带 `damage`、`damageInterval`、`damageTicks`；`activeTime >= ticks * interval`。替代：固定 3 hits 单帧 — 拒绝。
+4. **三技能**：`effect.kind: dash-landing-knockup`；dash 到目标 standoff；进入 recovery 前触发读取二技能 canonical 半径的落地圈，并对命中单位 `applyKnockup(duration)`。替代：仅单体伤害 — 拒绝。
 5. **击飞显示**：`WorldHpBars` 在 `offsetY + statusOffset` 绘制短文案「击飞」或图标；`remaining > 0` 时可见。替代：飘字 — 不够持久。
-6. **共享半径**：`ARTHUR_AOE_RADIUS` 从 JSON 二技能读取，三技能 `onLand` 引用同一值。
+6. **共享半径**：`ARTHUR_AOE_RADIUS` 仅从 JSON 二技能的 `hit.radius` 读取，三技能 `onLand` 引用同一值。
 
 ## Risks / Trade-offs
 

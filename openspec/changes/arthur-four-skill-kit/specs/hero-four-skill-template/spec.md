@@ -18,9 +18,13 @@
 - **WHEN** `arthur.ts` 装载技能
 - **THEN** 先通过四槽位校验再生成 `Skill[]`
 
-### Requirement: Extensible effect fields
-四技能模版 MUST 允许各槽位 `effect` 对象携带技能特有字段（如 `aoeRadius`、`damageInterval`、`knockupDuration`、`acquireRange`），schema 不阻塞后续英雄扩展。
+### Requirement: Typed effect configuration
+四技能模版 MUST 使用 `effect.kind` 区分技能效果；每种效果只允许其契约定义的字段。英雄数值在 JSON 中只能有一个权威来源，loader MUST 在运行时校验该契约，不得仅使用 TypeScript 类型断言。
 
-#### Scenario: Arthur extended fields
-- **WHEN** 亚瑟 JSON 含 `aoeRadius` 与 `knockupDuration`
-- **THEN** schema 校验通过且 loader 可读取
+#### Scenario: Arthur typed effects
+- **WHEN** 亚瑟 JSON 定义 `move-speed-buff`、`periodic-damage`、`dash-landing-knockup` 与 `attack-damage` 效果
+- **THEN** loader 校验每种效果的必填字段后生成对应运行时技能
+
+#### Scenario: Unknown effect is rejected
+- **WHEN** 英雄 JSON 中的 `effect.kind` 未被 hero kit 契约识别，或缺少该效果的必填字段
+- **THEN** loader 在创建技能前抛出配置错误

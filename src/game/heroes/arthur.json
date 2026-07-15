@@ -1,5 +1,4 @@
 {
-  "$schema": "./arthur.schema.json",
   "id": "arthur",
   "displayName": "Arthur",
   "stats": {
@@ -19,7 +18,7 @@
   "skills": [
     {
       "id": "shield-of-pact",
-      "name": "Shield of Pact",
+      "name": "契约之盾",
       "hotkey": "1",
       "hit": { "kind": "self" },
       "displacement": "ground",
@@ -29,6 +28,7 @@
       "cooldown": 6.0,
       "castMode": "instant",
       "effect": {
+        "kind": "move-speed-buff",
         "moveSpeedBoost": 0.4,
         "duration": 3.0,
         "acquireRange": 8.0
@@ -36,7 +36,7 @@
     },
     {
       "id": "whirlwind-strike",
-      "name": "Whirlwind Strike",
+      "name": "回旋打击",
       "hotkey": "2",
       "hit": { "kind": "circle", "radius": 3 },
       "displacement": "none",
@@ -46,15 +46,15 @@
       "cooldown": 5.0,
       "castMode": "instant",
       "effect": {
+        "kind": "periodic-damage",
         "damage": 45,
-        "aoeRadius": 3,
         "damageInterval": 0.2,
         "damageTicks": 4
       }
     },
     {
       "id": "sacred-judgement",
-      "name": "Sacred Judgement",
+      "name": "圣剑裁决",
       "hotkey": "3",
       "hit": { "kind": "target", "range": 8 },
       "displacement": "dash",
@@ -64,15 +64,15 @@
       "cooldown": 8.0,
       "castMode": "targeted",
       "effect": {
+        "kind": "dash-landing-knockup",
         "damage": 350,
         "dashDistance": 6,
-        "aoeRadius": 3,
         "knockupDuration": 0.6
       }
     },
     {
       "id": "auto-attack",
-      "name": "Auto Attack",
+      "name": "普攻",
       "hotkey": "0",
       "hit": { "kind": "rect", "halfWidth": 0.8, "halfDepth": 2.2 },
       "displacement": "none",
@@ -82,7 +82,7 @@
       "cooldown": 1.1,
       "castMode": "instant",
       "effect": {
-        "damage": 130,
+        "kind": "attack-damage",
         "attackRange": 2.0,
         "acquireRange": 8.0
       }

@@ -377,6 +377,7 @@ export function GameCanvas({
       )}
       <SkillHud
         ref={skillHudRef}
+        heroSkills={ARTHUR_DATA.skills}
         inputMode={mobile ? 'mobile' : 'desktop'}
         onPressStart={onSkillPressStart}
         onAttackModePress={onAttackModePress}
