@@ -101,8 +101,9 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.01;
 
-  // 朝向指示器:独立的 Group。standing 时它承担朝向含义(随玩家转向转 indicator);
-  // facing legacy 时它作为附加箭头指示。
+  // 朝向指示器:独立的 Group,挂在 root 下随三棱锥整体旋转。
+  // standing 时 indicator 局部 rotation.y 恒为 0,由 root 承担朝向;
+  // facing legacy 时同样随 root 转,作为附加箭头指示。
   const indicator = new Group();
   let shaftGeom: CylinderGeometry | undefined;
   let headGeom: ConeGeometry | undefined;
@@ -163,17 +164,16 @@ export function createEntityVisual(cfg: Partial<EntityVisualConfig> = {}): Entit
 
   function setFacingRad(r: number): void {
     // 约定:player forward = world -Z, r = 0 表示"玩家朝地图深处(-Z)"。
-    // standing 时三棱锥是上下对称的,只有 indicator(三角形)承担朝向含义。
-    // 三角形几何原始(零旋转时)尖端朝 +Z,主体在 +Z 一侧(player 面前)。
-    // 通过 indicator.rotation.y = π - r 把"+Z"翻到"玩家前进方向":
+    // indicator 局部 +Z 为"正前方";整体 root.rotation.y = π - r 把局部 +Z 翻到玩家前进方向,
+    // 三棱锥与指示器同步旋转,光照在 3 个侧面上形成亮/中/暗梯度(proposal §3.6.1)。
     //   A(vx<0,vz=0):r=-π/2, θ=3π/2≡-π/2 → +Z → -X(player 朝 -X = 左)
     //   D(vx>0,vz=0):r=+π/2, θ=+π/2 → +Z → +X(player 右)
     //   W(vx=0,vz<0):r=0,    θ=+π    → +Z → -Z(player 前方)
     //   S(vx=0,vz>0):r=π,    θ=0      → +Z stays +Z(player 回退方向)
     // facing legacy(箭头几何在 +Z)整体旋转 r + π,语义同上、自洽。
     if (c.orientation === 'standing') {
-      indicator.rotation.y = Math.PI - r;
-      root.rotation.y = 0;
+      root.rotation.y = Math.PI - r;
+      indicator.rotation.y = 0;
     } else {
       root.rotation.y = r + Math.PI;
     }

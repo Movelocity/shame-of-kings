@@ -121,8 +121,8 @@ export function createPlayerController(
     //   vx, vz 是世界坐标速度分量。
     //   Math.atan2(vx, -vz) 让 (vx=0,vz=-1)=0、(vx=0,vz=+1)=π、
     //   (vx>0,vz=0)=+π/2(逆时针 +X, 屏幕右)、(vx<0,vz=0)=-π/2(逆时针 -X, 屏幕左)。
-    // entity-visuals.setFacingRad 用这个 r 配合 indicator.rotation.y = π - r 把三角形
-    // 几何尖端转到玩家前进方向。
+    // entity-visuals.setFacingRad 用这个 r 配合 root.rotation.y = π - r 把三棱锥
+    // 与指示器整体转到玩家前进方向。
     const facing = Math.atan2(vx, -vz);
     _facingRad = facing;
     player.setFacingRad(facing);
