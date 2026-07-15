@@ -19,6 +19,7 @@
 - [x] 3.4 英雄状态栈：属性叠加 + 指定技能/次数/持续时间 + 索敌/非索敌 dash；一技能强化普攻出手时消耗
 - [x] 3.6 普通普攻自动追击范围收缩为 `attackRange × 1.3`，超出时空 A
 - [x] 3.7 `dash` 按速度逐帧推进且抵达后结算；新增 `teleport` 单帧位移语义；强化普攻独立配置索敌距离
+- [x] 3.8 索敌 dash 强制覆盖轮盘移动；非索敌 dash 严格使用释放时朝向与配置距离
 - [x] 3.5 三技能落地圈：dash 结束后同 `aoeRadius` 二次 AoE + 对命中单位 `applyKnockup`
 
 ## 4. Session 与表现（practice-session + unit-crowd-control）

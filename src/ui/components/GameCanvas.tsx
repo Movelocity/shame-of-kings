@@ -280,7 +280,7 @@ export function GameCanvas({
           gameScene.player.setFacingRad(pre.facingRad);
         }
 
-        gameScene.update(dt, merged);
+        gameScene.update(dt, pre.suppressManualMove ? ZERO_JOYSTICK : merged);
 
         const post = session.postTick({
           dt,

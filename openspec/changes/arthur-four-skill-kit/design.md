@@ -48,6 +48,9 @@
 
 1. **四槽位模版独立类型文件** vs 只改 `arthur.json`：选独立 `hero-kit.ts`，元歌/镜只加 JSON + loader。**理由**：用户明确要求预留模版。
 2. **一技能状态**：选 **移速属性状态 + 针对 `auto-attack` 的一次 dash 强化**，强化单独指定 `acquireRange`、`distance`、`speed`；由下一次普攻出手消耗。
+   - `locked`：成功索敌后覆盖轮盘方向，本次追击不可被手动移动取消。
+   - `forward`：不索敌，以释放瞬间朝向为快照突进配置距离。
+   - `locked-or-forward`：技能独立索敌范围内有目标时走 `locked`，否则走 `forward`。
 3. **二技能间歇** vs 单帧 `hits:3`：选 **active 内 `damageInterval` tick**。**替代**：拉长 active 多帧同一公式 — 等价，用 interval 字段数据驱动。
 4. **击飞** vs 眩晕字段 `stunDuration`：选 **击飞 CC**（`knockup`），JSON 改 `knockupDuration`。**替代**：复用 stun 名 — 拒绝，UI 与语义用击飞。
 5. **CC 在 Unit 上** vs 独立 `CcBag`：选 **Unit 可选 `cc: { kind, remaining }`**，木人桩够用。**替代**：全局 Map — 过度。

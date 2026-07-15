@@ -67,6 +67,14 @@
 - **WHEN** 某状态强化下一次普攻为索敌 dash
 - **THEN** 索敌使用该强化配置的 `acquireRange`，不使用普通普攻的 `attackRange × 1.3`
 
+#### Scenario: Locked dash overrides manual movement
+- **WHEN** `locked` 或 `locked-or-forward` 强化普攻在独立索敌范围内获得目标
+- **THEN** 该次强化普攻的方向与位移优先级高于轮盘/点击移动，手动输入不得取消锁敌或改写 dash 方向
+
+#### Scenario: Forward dash keeps cast direction
+- **WHEN** 强化普攻的 targeting 为 `forward`
+- **THEN** 无论普攻范围内是否有敌人，均不索敌转向，并沿释放瞬间的当前方向 dash 配置距离
+
 #### Scenario: Consume targeted skill enhancement
 - **WHEN** 某状态针对技能 S 且剩余 N 次，S 成功启动
 - **THEN** 本次施法应用状态特效，剩余次数减一；其他技能不消耗该状态

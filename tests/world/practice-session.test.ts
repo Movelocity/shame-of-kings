@@ -160,6 +160,83 @@ describe('createPracticeSession', () => {
     expect(session.heroState.skillEnhancements('whirlwind-strike')).toHaveLength(0);
   });
 
+  it('索敌 dash 强化普攻的优先级高于轮盘移动', () => {
+    const player = makePlayer({ x: 0, z: 0 });
+    const dummy = createPracticeDummy();
+    dummy.position = { x: 5, z: 0 };
+    const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
+    session.heroState.applySkillEnhancement({
+      id: 'locked-aa',
+      sourceSkillId: 'test',
+      targetSkillId: 'auto-attack',
+      duration: 3,
+      charges: 1,
+      effects: [
+        {
+          kind: 'dash',
+          distance: 6,
+          speed: 30,
+          acquireRange: 8,
+          targeting: 'locked',
+        },
+      ],
+    });
+
+    expect(session.requestAutoAttack()).toBe(true);
+    const pre = session.preTick({
+      dt: 1 / 60,
+      manualMove: true,
+      playerX: 0,
+      playerZ: 0,
+    });
+    expect(session.skillBook.active?.skill.displacement).toBe('dash');
+    expect(pre.facingRad).toBeCloseTo(Math.PI / 2, 5);
+    expect(pre.suppressManualMove).toBe(true);
+  });
+
+  it('非索敌 dash 强化普攻按释放时朝向突进配置距离', () => {
+    const player = makePlayer({ x: 0, z: 20 });
+    player.facingRad = Math.PI / 2;
+    const dummy = createPracticeDummy();
+    // 即使普攻距离内有敌人，forward dash 也不锁敌改方向。
+    dummy.position = { x: 0, z: 18 };
+    const session = createPracticeSession({ playerUnit: player, dummyUnit: dummy });
+    session.heroState.applySkillEnhancement({
+      id: 'forward-aa',
+      sourceSkillId: 'test',
+      targetSkillId: 'auto-attack',
+      duration: 3,
+      charges: 1,
+      effects: [
+        {
+          kind: 'dash',
+          distance: 3,
+          speed: 30,
+          acquireRange: 0,
+          targeting: 'forward',
+        },
+      ],
+    });
+
+    expect(session.requestAutoAttack()).toBe(true);
+    const pre = session.preTick({
+      dt: 1 / 60,
+      manualMove: true,
+      playerX: 0,
+      playerZ: 20,
+    });
+    expect(pre.suppressManualMove).toBe(true);
+    session.postTick({
+      dt: 0.05,
+      playerX: 0,
+      playerZ: 20,
+      facingRad: Math.PI / 2,
+    });
+    expect(player.position.x).toBeCloseTo(1.5, 5);
+    expect(player.position.z).toBeCloseTo(20, 5);
+    expect(session.skillBook.active?.dashDistanceTotal).toBe(3);
+  });
+
   it('postTick 在固定 dt 下可推进技能阶段', () => {
     const session = createPracticeSession({ playerUnit: makePlayer() });
     session.tryCastHotkey('1');

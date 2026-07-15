@@ -34,6 +34,8 @@ export interface PracticePreTickResult {
   moveTarget: { x: number; z: number } | null;
   clearMoveTarget: boolean;
   facingRad: number | null;
+  /** dash/强制锁敌追击期间，轮盘输入不得改写位移方向 */
+  suppressManualMove: boolean;
 }
 
 export interface PracticePostTickInput {
@@ -95,6 +97,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const judgementAcquireRange = getArthurJudgementAcquireRange();
 
   let dummyAlive = true;
+  let aaIntentOverridesManualMove = false;
 
   const allUnits = (): Unit[] =>
     dummyAlive ? [playerUnit, dummyUnit] : [playerUnit];
@@ -105,6 +108,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     dummyUnit.cc = undefined;
     dummyAlive = false;
     aaIntent.cancel();
+    aaIntentOverridesManualMove = false;
     return true;
   };
 
@@ -132,6 +136,8 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       : base;
     const started = skillBook.start(skill, playerUnit, { forwardRad });
     if (!started) return false;
+    aaIntent.cancel();
+    aaIntentOverridesManualMove = false;
     buffs.consumeSkillEnhancements(base.id);
     buffs.consumeNextAttackBonus();
     return true;
@@ -226,24 +232,36 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     requestAutoAttack(priority: AutoAttackPriority = 'default') {
       const aaSkill = arthurSkillByHotkey('0');
       if (!aaSkill || !skillBook.canStart(aaSkill.id)) return false;
-      const acquireRange = Math.max(
-        aaRanges.acquireRange,
-        autoAttackDashEnhancement(true)?.acquireRange ?? 0,
-      );
-      if (aaIntent.requestAttack(playerUnit, world, acquireRange, priority)) {
+      const lockedDash = autoAttackDashEnhancement(true);
+      if (
+        lockedDash &&
+        aaIntent.requestAttack(
+          playerUnit,
+          world,
+          lockedDash.acquireRange,
+          priority,
+        )
+      ) {
+        aaIntentOverridesManualMove = true;
+        return true;
+      }
+      const forwardDash = autoAttackDashEnhancement(false);
+      if (forwardDash) {
+        return startAutoAttack(playerUnit.facingRad, {
+          distance: forwardDash.distance,
+          speed: forwardDash.speed,
+        });
+      }
+      if (aaIntent.requestAttack(playerUnit, world, aaRanges.acquireRange, priority)) {
+        aaIntentOverridesManualMove = false;
         return true;
       }
       // 无可锁目标也要按当前朝向释放普攻。
-      const forwardDash = autoAttackDashEnhancement(false);
-      return startAutoAttack(
-        playerUnit.facingRad,
-        forwardDash
-          ? { distance: forwardDash.distance, speed: forwardDash.speed }
-          : null,
-      );
+      return startAutoAttack(playerUnit.facingRad, null);
     },
 
     cancelAutoAttack() {
+      if (aaIntentOverridesManualMove) return;
       aaIntent.cancel();
     },
 
@@ -256,11 +274,12 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       skillBook.reset();
       buffs.clear();
       aaIntent.clear();
+      aaIntentOverridesManualMove = false;
       clearAllCc(allUnits());
     },
 
     preTick({ dt, manualMove, playerX, playerZ }) {
-      if (manualMove) {
+      if (manualMove && !aaIntentOverridesManualMove) {
         aaIntent.cancel();
       }
 
@@ -312,13 +331,20 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
             : null;
           startAutoAttack(aaAction.forwardRad, dash);
         }
+      } else {
+        aaIntentOverridesManualMove = false;
       }
+
+      const suppressManualMove =
+        aaIntentOverridesManualMove ||
+        skillBook.active?.skill.displacement === 'dash';
 
       return {
         speedMultiplier,
         moveTarget,
         clearMoveTarget,
         facingRad,
+        suppressManualMove,
       };
     },
 
