@@ -1,4 +1,5 @@
 // 练习场 session:世界生命周期、tick、cast、reset;与 React / Three 解耦
+import type { AutoAttackPriority } from '../../engine/input/desktop-skill-hotkeys';
 import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../combat/auto-attack-intent';
 import { createFaceChargeIntent } from '../combat/face-charge-intent';
 import { clearAllCc, tickAllCc } from '../combat/unit-cc';
@@ -65,7 +66,7 @@ export interface PracticeSession {
   preTick(input: PracticePreTickInput): PracticePreTickResult;
   postTick(input: PracticePostTickInput): PracticePostTickResult;
   tryCastHotkey(hotkey: string): boolean;
-  requestAutoAttack(): boolean;
+  requestAutoAttack(priority?: AutoAttackPriority): boolean;
   cancelAutoAttack(): void;
   resetWorld(): void;
   getHudButtons(): PracticeHudButtonState[];
@@ -117,8 +118,8 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       return true;
     },
 
-    requestAutoAttack() {
-      return aaIntent.requestAttack(playerUnit, world, aaRanges.acquireRange);
+    requestAutoAttack(priority: AutoAttackPriority = 'default') {
+      return aaIntent.requestAttack(playerUnit, world, aaRanges.acquireRange, priority);
     },
 
     cancelAutoAttack() {

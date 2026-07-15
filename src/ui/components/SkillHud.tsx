@@ -15,7 +15,11 @@
 //     通过 prop aimingHotkey 注入;CSS 在 styles.css 里追加一个高亮态)
 //   - CD 中 / locked 中 .skill-orb 在事件入口短路
 //
-// Pointer Events 在触摸和鼠标设备上共用；桌面端同时保留 1/2/3/0 热键。
+// Pointer Events 在触摸和鼠标设备上共用；桌面端热键 J/K/L(普攻) + U/I/O/P(技能)。
+import {
+  desktopLabelForSlot,
+  type AutoAttackPriority,
+} from '../../engine/input/desktop-skill-hotkeys';
 import {
   forwardRef,
   useImperativeHandle,
@@ -42,18 +46,22 @@ export interface SkillHudHandle {
 }
 
 export interface SkillHudProps {
-  /** 技能按钮按压回调 */
-  onPressStart?: (hotkey: string) => void;
+  /** 桌面端显示 J/U/I/O/P 与 K/L 普攻方式；移动端显示槽位数字 */
+  inputMode?: 'desktop' | 'mobile';
+  /** 技能按钮按压回调(slot hotkey: 0–4) */
+  onPressStart?: (slotHotkey: string) => void;
+  /** 桌面端 K/L 普攻方式 */
+  onAttackModePress?: (priority: Exclude<AutoAttackPriority, 'default'>) => void;
   /** 技能按钮抬起；targeted 模式由 GameCanvas 按坐标判定取消或释放 */
   onPressEnd?: (info: {
-    hotkey: string;
+    slotHotkey: string;
     clientX: number;
     clientY: number;
     inside: boolean;
   }) => void;
-  /** 当前正在瞄准的技能 hotkey(由 GameCanvas 注入);非空时 .skill-hud__cancel 进入激活态 */
-  aimingHotkey?: string | null;
-  /** T4 KI-4:每个 hotkey 的 castMode;缺省全 'instant'(兼容 M3) */
+  /** 当前正在瞄准的技能 slot hotkey(由 GameCanvas 注入);非空时 .skill-hud__cancel 进入激活态 */
+  aimingSlotHotkey?: string | null;
+  /** T4 KI-4:每个 slot hotkey 的 castMode;缺省全 'instant'(兼容 M3) */
   castModes?: Readonly<Record<string, 'instant' | 'targeted'>>;
 }
 
@@ -62,7 +70,8 @@ type SkillLayoutMode = 'three' | 'four';
 interface SkillHudItem {
   id: string;
   label: string;
-  hotkey: string;
+  /** 英雄 kit 内部槽位 hotkey(0–4) */
+  slotHotkey: string;
   kind: 'attack' | 'skill' | 'ultimate' | 'utility';
   x: number;
   y: number;
@@ -70,25 +79,40 @@ interface SkillHudItem {
   upgrade?: boolean;
 }
 
+interface AttackModeHudItem {
+  id: string;
+  label: string;
+  hotkey: string;
+  priority: Exclude<AutoAttackPriority, 'default'>;
+  x: number;
+  y: number;
+  size: number;
+}
+
 const THREE_SKILL_LAYOUT: SkillHudItem[] = [
-  { id: 'attack', label: '普攻', hotkey: '0', kind: 'attack', x: -30, y: -10, size: 90 },
-  { id: 'skill-1', label: '斩击', hotkey: '1', kind: 'skill', x: -162, y: -12, size: 80 },
-  { id: 'skill-2', label: '冲锋', hotkey: '2', kind: 'skill', x: -96, y: -102, size: 80 },
-  { id: 'skill-3', label: '圣裁', hotkey: '3', kind: 'ultimate', x: 4, y: -132, size: 80, upgrade: true },
-  { id: 'recall', label: '回城', hotkey: 'B', kind: 'utility', x: -388, y: -5, size: 46 },
-  { id: 'heal', label: '恢复', hotkey: 'H', kind: 'utility', x: -324, y: -5, size: 46 },
-  { id: 'spell', label: '闪现', hotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
+  { id: 'attack', label: '普攻', slotHotkey: '0', kind: 'attack', x: -30, y: -10, size: 90 },
+  { id: 'skill-1', label: '斩击', slotHotkey: '1', kind: 'skill', x: -162, y: -12, size: 80 },
+  { id: 'skill-2', label: '冲锋', slotHotkey: '2', kind: 'skill', x: -96, y: -102, size: 80 },
+  { id: 'skill-3', label: '圣裁', slotHotkey: '3', kind: 'ultimate', x: 4, y: -132, size: 80, upgrade: true },
+  { id: 'recall', label: '回城', slotHotkey: 'B', kind: 'utility', x: -388, y: -5, size: 46 },
+  { id: 'heal', label: '恢复', slotHotkey: 'H', kind: 'utility', x: -324, y: -5, size: 46 },
+  { id: 'spell', label: '闪现', slotHotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
 ];
 
 const FOUR_SKILL_LAYOUT: SkillHudItem[] = [
-  { id: 'attack', label: '普攻', hotkey: '0', kind: 'attack', x: 0, y: 0, size: 82 },
-  { id: 'skill-1', label: '斩击', hotkey: '1', kind: 'skill', x: -134, y: -4, size: 60 },
-  { id: 'skill-2', label: '冲锋', hotkey: '2', kind: 'skill', x: -120, y: -76, size: 60 },
-  { id: 'skill-3', label: '护盾', hotkey: '3', kind: 'skill', x: -50, y: -124, size: 60 },
-  { id: 'skill-4', label: '圣裁', hotkey: '4', kind: 'ultimate', x: 42, y: -116, size: 66, upgrade: true },
-  { id: 'recall', label: '回城', hotkey: 'B', kind: 'utility', x: -388, y: -5, size: 46 },
-  { id: 'heal', label: '恢复', hotkey: 'H', kind: 'utility', x: -324, y: -5, size: 46 },
-  { id: 'spell', label: '闪现', hotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
+  { id: 'attack', label: '普攻', slotHotkey: '0', kind: 'attack', x: 0, y: 0, size: 82 },
+  { id: 'skill-1', label: '斩击', slotHotkey: '1', kind: 'skill', x: -134, y: -4, size: 60 },
+  { id: 'skill-2', label: '冲锋', slotHotkey: '2', kind: 'skill', x: -120, y: -76, size: 60 },
+  { id: 'skill-3', label: '护盾', slotHotkey: '3', kind: 'skill', x: -50, y: -124, size: 60 },
+  { id: 'skill-4', label: '圣裁', slotHotkey: '4', kind: 'ultimate', x: 42, y: -116, size: 66, upgrade: true },
+  { id: 'recall', label: '回城', slotHotkey: 'B', kind: 'utility', x: -388, y: -5, size: 46 },
+  { id: 'heal', label: '恢复', slotHotkey: 'H', kind: 'utility', x: -324, y: -5, size: 46 },
+  { id: 'spell', label: '闪现', slotHotkey: 'F', kind: 'utility', x: -260, y: -5, size: 50 },
+];
+
+const DESKTOP_ATTACK_MODE_LAYOUT: AttackModeHudItem[] = [
+  { id: 'attack-minion', label: '优先小兵', hotkey: 'K', priority: 'minion', x: -30, y: 52, size: 46 },
+  { id: 'attack-tower', label: '优先防御塔', hotkey: 'L', priority: 'tower', x: 36, y: 52, size: 46 },
 ];
 
 const DEFAULT_CAST_MODES: Readonly<Record<string, 'instant' | 'targeted'>> = {
@@ -100,7 +124,14 @@ const DEFAULT_CAST_MODES: Readonly<Record<string, 'instant' | 'targeted'>> = {
 };
 
 export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function SkillHud(
-  { onPressStart, onPressEnd, aimingHotkey = null, castModes = DEFAULT_CAST_MODES },
+  {
+    inputMode = 'mobile',
+    onPressStart,
+    onAttackModePress,
+    onPressEnd,
+    aimingSlotHotkey = null,
+    castModes = DEFAULT_CAST_MODES,
+  },
   ref: Ref<SkillHudHandle>,
 ): JSX.Element {
   const [mode, setMode] = useState<SkillLayoutMode>('three');
@@ -142,13 +173,21 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     [],
   );
 
+  function displayHotkeyForSlot(slotHotkey: string): string {
+    if (inputMode === 'desktop' && /^[0-4]$/.test(slotHotkey)) {
+      return desktopLabelForSlot(slotHotkey);
+    }
+    return slotHotkey;
+  }
+
   // 工具:渲染单个亚瑟技能按钮
   function renderArthurOrb(item: SkillHudItem): JSX.Element {
-    const state = buttonStates.get(item.hotkey);
+    const state = buttonStates.get(item.slotHotkey);
     const cdRemaining = state?.cooldownRemaining ?? 0;
     const isLocked = state?.locked ?? false;
     const isReady = cdRemaining <= 0 && !isLocked;
-    const castMode = castModes[item.hotkey] ?? 'instant';
+    const castMode = castModes[item.slotHotkey] ?? 'instant';
+    const displayHotkey = displayHotkeyForSlot(item.slotHotkey);
     const isCooling = !isReady;
     const cooldownRatio =
       state && state.cooldownMax > 0
@@ -161,7 +200,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
       `skill-orb--${item.kind}`,
       isCooling ? 'is-cooling' : '',
       castMode === 'targeted' ? 'is-targeted' : '',
-      aimingHotkey === item.hotkey ? 'is-aiming' : '',
+      aimingSlotHotkey === item.slotHotkey ? 'is-aiming' : '',
     ]
       .filter(Boolean)
       .join(' ');
@@ -176,7 +215,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
       } catch {
         // 部分平台 down 上不接受 capture,后续仍可工作
       }
-      onPressStart?.(item.hotkey);
+      onPressStart?.(item.slotHotkey);
     }
     function onUp(e: ReactPointerEvent<HTMLButtonElement>): void {
       try {
@@ -185,7 +224,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         // ignore
       }
       onPressEnd?.({
-        hotkey: item.hotkey,
+        slotHotkey: item.slotHotkey,
         clientX: e.clientX,
         clientY: e.clientY,
         inside: true,
@@ -193,7 +232,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     }
     function onCancel(e: ReactPointerEvent<HTMLButtonElement>): void {
       onPressEnd?.({
-        hotkey: item.hotkey,
+        slotHotkey: item.slotHotkey,
         clientX: e.clientX,
         clientY: e.clientY,
         inside: false,
@@ -218,7 +257,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         onPointerUp={onUp}
         onPointerCancel={onCancel}
       >
-        <span className="skill-orb__icon">{item.hotkey}</span>
+        <span className="skill-orb__icon">{displayHotkey}</span>
         <span className="skill-orb__label">{item.label}</span>
         {item.upgrade && <span className="skill-orb__upgrade">+</span>}
         {isCooling && (
@@ -230,6 +269,32 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
               : '·'}
           </span>
         )}
+      </button>
+    );
+  }
+
+  function renderAttackModeOrb(item: AttackModeHudItem): JSX.Element {
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className="skill-orb skill-orb--attack"
+        style={
+          {
+            '--skill-x': `${item.x}px`,
+            '--skill-y': `${item.y}px`,
+            '--skill-size': `${item.size}px`,
+          } as CSSProperties
+        }
+        aria-label={item.label}
+        onPointerDown={(e) => {
+          if (e.pointerType === 'mouse' && e.button !== 0) return;
+          e.preventDefault();
+          onAttackModePress?.(item.priority);
+        }}
+      >
+        <span className="skill-orb__icon">{item.hotkey}</span>
+        <span className="skill-orb__label">{item.label}</span>
       </button>
     );
   }
@@ -255,12 +320,12 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
 
       <div className={`skill-hud__pad skill-hud__pad--${mode}`}>
         <div
-          className={`skill-hud__cancel${aimingHotkey ? ' is-aiming' : ''}`}
+          className={`skill-hud__cancel${aimingSlotHotkey ? ' is-aiming' : ''}`}
           onPointerUp={
-            aimingHotkey
+            aimingSlotHotkey
               ? (e) =>
                   onPressEnd?.({
-                    hotkey: aimingHotkey,
+                    slotHotkey: aimingSlotHotkey,
                     clientX: e.clientX,
                     clientY: e.clientY,
                     inside: true,
@@ -268,13 +333,16 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
               : undefined
           }
           data-testid="skill-hud-cancel"
-          aria-hidden={!aimingHotkey}
+          aria-hidden={!aimingSlotHotkey}
         >
           取消
         </div>
+        {inputMode === 'desktop' &&
+          DESKTOP_ATTACK_MODE_LAYOUT.map((item) => renderAttackModeOrb(item))}
         {items.map((item) => {
-          const isArthur = /^[0-4]$/.test(item.hotkey);
+          const isArthur = /^[0-4]$/.test(item.slotHotkey);
           if (isArthur) return renderArthurOrb(item);
+          const displayHotkey = item.slotHotkey;
           // utility 按钮走 M3 原版静态 JSX
           return (
             <button
@@ -290,7 +358,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
               }
               aria-label={item.label}
             >
-              <span className="skill-orb__icon">{item.hotkey}</span>
+              <span className="skill-orb__icon">{displayHotkey}</span>
               <span className="skill-orb__label">{item.label}</span>
               {item.upgrade && <span className="skill-orb__upgrade">+</span>}
             </button>

@@ -2,6 +2,7 @@
 //  - 普通普攻:追到 attackRange 停步再出手(不贴身)
 //  - 强化普攻(closeEngage):朝目标中心贴身/可重合后再/同时出手
 // 出伤仍走命中盒(hits),本模块只给出手门槛与追击点。
+import type { AutoAttackPriority } from '../../engine/input/desktop-skill-hotkeys';
 import type { Unit, WorldLike } from '../skills/types';
 import type { Vec2 } from '../skills/vec2';
 
@@ -78,11 +79,13 @@ export function facingToward(from: Vec2, to: Vec2): number {
 /**
  * 获取范围内最近可攻击单位。
  * 跳过自身、同阵营、hp≤0;neutral(木人桩)可打。
+ * priority 为 minion/tower 时,待 P2 单位类型落地后再过滤;当前练习场等同 default。
  */
 export function findNearestEnemy(
   world: WorldLike,
   caster: Unit,
   acquireRange: number,
+  _priority: AutoAttackPriority = 'default',
 ): Unit | null {
   const candidates = world.unitsNear(caster.position, acquireRange);
   let best: { unit: Unit; dist: number } | null = null;
@@ -112,6 +115,7 @@ export interface AutoAttackIntent {
     caster: Unit,
     world: WorldLike,
     acquireRange: number,
+    priority?: AutoAttackPriority,
   ): boolean;
   /** 手动移动等取消 */
   cancel(): void;
@@ -138,8 +142,8 @@ export function createAutoAttackIntent(): AutoAttackIntent {
       return active;
     },
 
-    requestAttack(caster, world, acquireRange) {
-      const enemy = findNearestEnemy(world, caster, acquireRange);
+    requestAttack(caster, world, acquireRange, priority = 'default') {
+      const enemy = findNearestEnemy(world, caster, acquireRange, priority);
       if (!enemy) return false;
       targetId = enemy.id;
       active = true;

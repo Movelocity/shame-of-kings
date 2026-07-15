@@ -1,16 +1,16 @@
 // proposal §3.3 模块 A + §5.1:把 scene 挂到 canvas + 接入多种输入
-// 桌面端:WASD / 方向键 + 鼠标左键点击寻路
+// 桌面端:WASD / 方向键 + 鼠标左键点击寻路;J/K/L 普攻,U/I/O/P 技能 1–4
 // 移动端:虚拟摇杆
 // 通过 ref + 每帧 read 模式给 loop tick,不触发 React 重渲染
 //
 // M3 T3.5:用 WorldState 替换 M2 临时 DebugWorld;DamageFloaters 走 Three.js Sprite;
-// 1/2/3 键触发亚瑟 3 个主动技能,0 键普攻
 // T19:血条挂到角色头上(Sprite + CanvasTexture,billboard 自动面向相机)
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react';
 import { Raycaster, Vector2, Vector3, WebGLRenderer } from 'three';
 import { REQUIRED_SHADOW_MAP } from '../../engine/renderer/lights';
 import { createGameScene, type GameSceneHandle } from '../../engine/renderer/scene';
 import { createFixedLoop } from '../../engine/loop/gameLoop';
+import { resolveDesktopSkillKey, type AutoAttackPriority } from '../../engine/input/desktop-skill-hotkeys';
 import { ZERO_JOYSTICK, type JoystickState } from '../../engine/input/joystick';
 import { createKeyboardMove } from '../../engine/input/keyboard-move';
 import { isMobileUA } from '../../platform/isMobileUA';
@@ -51,22 +51,22 @@ export function GameCanvas({
   const isMobile = useRef<boolean>(false);
   const sessionRef = useRef<PracticeSession | null>(null);
   // T4 KI-4 移动端"瞄准中"状态:React state 仅用于驱动 .skill-hud__cancel.is-aiming
-  const [aiming, setAiming] = useState<{ hotkey: string; skill: Skill } | null>(null);
-  const aimStateRef = useRef<{ hotkey: string; skill: Skill } | null>(null);
-  const setAimState = (next: { hotkey: string; skill: Skill } | null): void => {
+  const [aiming, setAiming] = useState<{ slotHotkey: string; skill: Skill } | null>(null);
+  const aimStateRef = useRef<{ slotHotkey: string; skill: Skill } | null>(null);
+  const setAimState = (next: { slotHotkey: string; skill: Skill } | null): void => {
     aimStateRef.current = next;
     setAiming(next);
   };
 
-  const requestAutoAttack = (): boolean => {
+  const requestAutoAttack = (priority: AutoAttackPriority = 'default'): boolean => {
     const session = sessionRef.current;
     if (!session) return false;
-    return session.requestAutoAttack();
+    return session.requestAutoAttack(priority);
   };
-  const tryStartSkillByHotkey = (hotkey: string): boolean => {
+  const tryStartSkillBySlot = (slotHotkey: string): boolean => {
     const session = sessionRef.current;
     if (!session) return false;
-    return session.tryCastHotkey(hotkey);
+    return session.tryCastHotkey(slotHotkey);
   };
   const cancelAiming = (): void => {
     setAimState(null);
@@ -89,26 +89,31 @@ export function GameCanvas({
       setAimState(null);
       return;
     }
-    tryStartSkillByHotkey(cur.hotkey);
+    tryStartSkillBySlot(cur.slotHotkey);
     setAimState(null);
   };
-  const onSkillPressStart = (hotkey: string): void => {
-    if (hotkey === '0') {
+  const onSkillPressStart = (slotHotkey: string): void => {
+    if (slotHotkey === '0') {
       requestAutoAttack();
       return;
     }
-    const skill = arthurSkillByHotkey(hotkey);
+    const skill = arthurSkillByHotkey(slotHotkey);
     const session = sessionRef.current;
     if (!skill || !session) return;
     if (aimStateRef.current || !session.skillBook.canStart(skill.id)) return;
     if (skill.castMode === 'targeted') {
-      setAimState({ hotkey, skill });
+      setAimState({ slotHotkey, skill });
     } else {
-      tryStartSkillByHotkey(hotkey);
+      tryStartSkillBySlot(slotHotkey);
     }
   };
+  const onAttackModePress = (
+    priority: Exclude<AutoAttackPriority, 'default'>,
+  ): void => {
+    requestAutoAttack(priority);
+  };
   const onSkillPressEnd = (info: {
-    hotkey: string;
+    slotHotkey: string;
     clientX: number;
     clientY: number;
     inside: boolean;
@@ -117,7 +122,7 @@ export function GameCanvas({
       cancelAiming();
       return;
     }
-    if (aimStateRef.current?.hotkey === info.hotkey) {
+    if (aimStateRef.current?.slotHotkey === info.slotHotkey) {
       commitAimingFromPointer(info.clientX, info.clientY, true);
     }
   };
@@ -212,8 +217,14 @@ export function GameCanvas({
     canvas.addEventListener('click', onCanvasClick as unknown as EventListener);
 
     function onKeyDown(e: KeyboardEvent): void {
-      if (!['1', '2', '3', '0'].includes(e.key)) return;
-      session.tryCastHotkey(e.key);
+      const action = resolveDesktopSkillKey(e.key);
+      if (!action) return;
+      e.preventDefault();
+      if (action.kind === 'attack') {
+        session.requestAutoAttack(action.priority);
+        return;
+      }
+      session.tryCastHotkey(action.slotHotkey);
     }
     window.addEventListener('keydown', onKeyDown);
 
@@ -343,9 +354,11 @@ export function GameCanvas({
       )}
       <SkillHud
         ref={skillHudRef}
+        inputMode={mobile ? 'mobile' : 'desktop'}
         onPressStart={onSkillPressStart}
+        onAttackModePress={onAttackModePress}
         onPressEnd={onSkillPressEnd}
-        aimingHotkey={aiming?.hotkey ?? null}
+        aimingSlotHotkey={aiming?.slotHotkey ?? null}
         castModes={ARTHUR_CAST_MODES}
       />
     </>
