@@ -5,8 +5,8 @@
 //
 // M3 T3.5:用 WorldState 替换 M2 临时 DebugWorld;DamageFloaters 走 Three.js Sprite;
 // T19:血条挂到角色头上(Sprite + CanvasTexture,billboard 自动面向相机)
-import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react';
-import { PerspectiveCamera, Raycaster, Vector2, Vector3, WebGLRenderer } from 'three';
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
+import { PerspectiveCamera, WebGLRenderer } from 'three';
 import { REQUIRED_SHADOW_MAP } from '../../engine/renderer/lights';
 import { createGameScene, type GameSceneHandle } from '../../engine/renderer/scene';
 import { createFixedLoop } from '../../engine/loop/gameLoop';
@@ -226,8 +226,6 @@ export function GameCanvas({
 
     isMobile.current = isMobileUA();
     const keyboard = createKeyboardMove();
-    const raycaster = new Raycaster();
-    const groundPlane = new Vector3(0, 0.6, 0);
 
     const renderer = new WebGLRenderer({ canvas, antialias: false });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -303,25 +301,6 @@ export function GameCanvas({
       gameScene.follow.resize(w / h);
     }
     window.addEventListener('resize', onResize);
-
-    function onCanvasClick(e: ReactMouseEvent<HTMLCanvasElement>): void {
-      if (isMobile.current) return;
-      if (e.button !== 0) return;
-      const cam = gameScene.follow.camera;
-      const rect = canvas!.getBoundingClientRect();
-      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(new Vector2(nx, ny), cam);
-      const from = raycaster.ray.origin;
-      const dir = raycaster.ray.direction;
-      if (Math.abs(dir.y) < 1e-6) return;
-      const t = (groundPlane.y - from.y) / dir.y;
-      if (t <= 0) return;
-      const hit = new Vector3(from.x + dir.x * t, groundPlane.y, from.z + dir.z * t);
-      session.cancelAutoAttack();
-      gameScene.controller.setMoveTarget({ x: hit.x, z: hit.z });
-    }
-    canvas.addEventListener('click', onCanvasClick as unknown as EventListener);
 
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key === 'Escape' && session.getAimingPreview()) {
@@ -587,7 +566,6 @@ export function GameCanvas({
       window.removeEventListener('resize', onResize);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      canvas.removeEventListener('click', onCanvasClick as unknown as EventListener);
       keyboard.dispose();
       unsubscribeDamage();
       floaters.dispose();
@@ -644,11 +622,12 @@ export function GameCanvas({
       />
       {import.meta.env.DEV && (
         <div
+          className="dev-hero-switcher"
           style={{
             position: 'fixed',
             top: 8,
             left: 8,
-            zIndex: 20,
+            zIndex: 30,
             display: 'flex',
             gap: 4,
             background: 'rgba(0,0,0,0.5)',

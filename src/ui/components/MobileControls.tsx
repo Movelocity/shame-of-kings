@@ -123,10 +123,11 @@ export function MobileControls({
         if (e.button !== 0) return;
       }
       // 命中穿透:如果点击点真实落点是 .skill-orb / .skill-hud__cancel / .skill-hud__toggle
-      // (T4 技能栏的祖先链),完全跳过本层处理,让子元素自己接 pointer 事件。
+      // (T4 技能栏的祖先链),或是 dev 角色切换条,完全跳过本层处理,让子元素自己接 pointer 事件。
       // 否则 setPointerCapture 会把 pointer 锁到 overlay 上,绕过 .skill-orb.onPointerDown。
       const hit = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       if (hit?.closest('.skill-hud')) return;
+      if (hit?.closest('.dev-hero-switcher')) return;
       const target = e.currentTarget as HTMLElement | null;
       if (!target) return;
       e.preventDefault();
