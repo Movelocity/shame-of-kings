@@ -4,6 +4,7 @@
 import arthurJson from './arthur.json' with { type: 'json' };
 import { applyMoveSpeedBuff, applyNextAttackDash } from '../buffs/buff-bag';
 import { applyKnockup } from '../combat/unit-cc';
+import { defaultTargetFilter } from '../combat/target-filter';
 import { resolveHits } from '../skills/hits';
 import { makeSkill } from '../skills/runtime';
 import type { DamageFormula, DamageResult, Skill } from '../skills/types';
@@ -132,6 +133,7 @@ export function loadArthurSkills(): readonly Skill[] {
             ctx.caster,
             circleHit,
             ctx.caster.facingRad,
+            { filter: defaultTargetFilter(ctx.caster) },
           );
           const results: DamageResult[] = [];
           for (const h of hits) {

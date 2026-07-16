@@ -48,6 +48,35 @@ export type HeroSkillEffectData =
       kind: 'attack-damage';
       attackRange: number;
       autoAcquireRangeMultiplier: number;
+    }
+  | {
+      kind: 'spawn-projectile';
+      speed: number;
+      maxRange: number;
+      collisionRadius?: number;
+      homing?: boolean;
+      onTargetLost?: 'expire' | 'continue-forward' | 'retarget';
+      pierce?: number;
+      damage: number;
+      projectileCount?: number;
+    }
+  | {
+      kind: 'projectile-then-zone';
+      projectileSpeed: number;
+      projectileMaxRange: number;
+      projectileCollisionRadius?: number;
+      projectileDamage: number;
+      zoneRadius: number;
+      zoneTickInterval: number;
+      zoneTicks: number;
+      zoneDamage: number;
+    }
+  | {
+      kind: 'periodic-zone';
+      radius: number;
+      tickInterval: number;
+      ticks: number;
+      damage: number;
     };
 
 /** 英雄 kit JSON 顶层契约 */
@@ -123,6 +152,17 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
       'knockupDuration',
     ],
     'attack-damage': ['attackRange', 'autoAcquireRangeMultiplier'],
+    'spawn-projectile': ['speed', 'maxRange', 'damage'],
+    'projectile-then-zone': [
+      'projectileSpeed',
+      'projectileMaxRange',
+      'projectileDamage',
+      'zoneRadius',
+      'zoneTickInterval',
+      'zoneTicks',
+      'zoneDamage',
+    ],
+    'periodic-zone': ['radius', 'tickInterval', 'ticks', 'damage'],
   };
   const fields = numericFields[effect.kind as HeroSkillEffectData['kind']];
   if (!fields) throw new Error(`hero kit "${heroId}": unknown effect "${effect.kind}"`);
@@ -137,6 +177,12 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
       !Number.isFinite(effect.dashSpeed as number))
   ) {
     throw new Error(`hero kit "${heroId}": effect.dashSpeed must be positive`);
+  }
+  if (effect.kind === 'spawn-projectile' && (effect.speed as number) <= 0) {
+    throw new Error(`hero kit "${heroId}": effect.speed must be positive`);
+  }
+  if (effect.kind === 'projectile-then-zone' && (effect.projectileSpeed as number) <= 0) {
+    throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
   }
 }
 

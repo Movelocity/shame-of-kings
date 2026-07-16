@@ -10,6 +10,7 @@ import {
 import { createBuffBag } from '../../src/game/buffs/buff-bag';
 import { applyDamage, startSkill } from '../../src/game/skills/runtime';
 import type { SkillContext, Unit, WorldLike } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
 function mkUnit(id: string, x = 0, z = 0, hp = 1000): Unit {
   return {
@@ -19,6 +20,7 @@ function mkUnit(id: string, x = 0, z = 0, hp = 1000): Unit {
     hp,
     hpMax: hp,
     isStatic: false,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
   };

@@ -4,10 +4,13 @@ import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../comba
 import { clearAllCc, tickAllCc } from '../combat/unit-cc';
 import { createHeroStateStack } from '../buffs/buff-bag';
 import {
-  arthurSkillByHotkey,
-  getArthurAutoAttackRanges,
-  getArthurJudgementAcquireRange,
-} from '../heroes/arthur';
+  getHeroAutoAttackRanges,
+  getHeroJudgementAcquireRange,
+  getHeroHpMax,
+  heroSkillByHotkey,
+  type HeroId,
+} from '../heroes/index';
+import { createCastSnapshot } from '../skills/cast-snapshot';
 import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
 import type { DamageResult, Skill, SkillInstance, Unit } from '../skills/types';
@@ -15,11 +18,12 @@ import {
   createPracticeDummy,
   PRACTICE_DUMMY_REGEN_PER_SEC,
 } from '../units/practice-dummy';
-import { createWorldState, type WorldStateHandle } from './WorldState';
+import { createWorldState, effectEventsToDamageResults, type WorldStateHandle } from './WorldState';
 
 export interface PracticeSessionInit {
   playerUnit: Unit;
   dummyUnit?: Unit;
+  heroId?: HeroId;
 }
 
 export interface PracticePreTickInput {
@@ -76,6 +80,8 @@ export interface PracticeSession {
   readonly buffs: ReturnType<typeof createHeroStateStack>;
   readonly playerUnit: Unit;
   readonly dummyUnit: Unit;
+  readonly heroId: HeroId;
+  setHero(heroId: HeroId): void;
   preTick(input: PracticePreTickInput): PracticePreTickResult;
   postTick(input: PracticePostTickInput): PracticePostTickResult;
   tryCastHotkey(hotkey: string): boolean;
@@ -93,8 +99,9 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const heroState = createHeroStateStack();
   const buffs = heroState;
   const aaIntent = createAutoAttackIntent();
-  const aaRanges = getArthurAutoAttackRanges();
-  const judgementAcquireRange = getArthurJudgementAcquireRange();
+  let heroId: HeroId = init.heroId ?? 'arthur';
+  let aaRanges = getHeroAutoAttackRanges(heroId);
+  let judgementAcquireRange = getHeroJudgementAcquireRange(heroId);
 
   let dummyAlive = true;
   let aaIntentOverridesManualMove = false;
@@ -124,7 +131,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     forwardRad: number,
     dash: { distance: number; speed: number } | null,
   ): boolean => {
-    const base = arthurSkillByHotkey('0');
+    const base = heroSkillByHotkey(heroId, '0');
     if (!base) return false;
     const skill: Skill = dash && dash.distance > 0
       ? {
@@ -134,7 +141,13 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
           dashSpeed: dash.speed,
         }
       : base;
-    const started = skillBook.start(skill, playerUnit, { forwardRad });
+    const snapshot = createCastSnapshot({
+      casterId: playerUnit.id,
+      skillId: skill.id,
+      origin: playerUnit.position,
+      forwardRad,
+    });
+    const started = skillBook.start(skill, playerUnit, snapshot);
     if (!started) return false;
     aaIntent.cancel();
     aaIntentOverridesManualMove = false;
@@ -183,10 +196,23 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     buffs,
     playerUnit,
     dummyUnit,
+    get heroId() {
+      return heroId;
+    },
+
+    setHero(nextHeroId) {
+      if (nextHeroId === heroId) return;
+      heroId = nextHeroId;
+      aaRanges = getHeroAutoAttackRanges(heroId);
+      judgementAcquireRange = getHeroJudgementAcquireRange(heroId);
+      playerUnit.hpMax = getHeroHpMax(heroId);
+      playerUnit.hp = playerUnit.hpMax;
+      this.resetWorld();
+    },
 
     tryCastHotkey(hotkey) {
       if (hotkey === '0') return this.requestAutoAttack();
-      const baseSkill = arthurSkillByHotkey(hotkey);
+      const baseSkill = heroSkillByHotkey(heroId, hotkey);
       if (!baseSkill) return false;
       const enhancedDash = skillDashEnhancement(baseSkill.id);
       const skill: Skill = enhancedDash
@@ -200,6 +226,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
 
       let forwardRad = playerUnit.facingRad;
       let dashDistance: number | undefined;
+      let targetId: string | undefined;
       const enhancementNeedsTarget =
         enhancedDash?.targeting === 'locked' ||
         enhancedDash?.targeting === 'locked-or-forward';
@@ -216,6 +243,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
           return false;
         }
         if (target) {
+          targetId = target.id;
           forwardRad = facingToward(playerUnit.position, target.position);
           const dx = target.position.x - playerUnit.position.x;
           const dz = target.position.z - playerUnit.position.z;
@@ -223,14 +251,22 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         }
       }
 
-      const inst = skillBook.start(skill, playerUnit, { forwardRad, dashDistance });
+      const snapshot = createCastSnapshot({
+        casterId: playerUnit.id,
+        skillId: skill.id,
+        origin: playerUnit.position,
+        forwardRad,
+        targetId,
+        dashDistance,
+      });
+      const inst = skillBook.start(skill, playerUnit, snapshot);
       if (!inst) return false;
       buffs.consumeSkillEnhancements(skill.id);
       return true;
     },
 
     requestAutoAttack(priority: AutoAttackPriority = 'default') {
-      const aaSkill = arthurSkillByHotkey('0');
+      const aaSkill = heroSkillByHotkey(heroId, '0');
       if (!aaSkill || !skillBook.canStart(aaSkill.id)) return false;
       const lockedDash = autoAttackDashEnhancement(true);
       if (
@@ -272,6 +308,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       }
       dummyUnit.hp = dummyUnit.hpMax;
       skillBook.reset();
+      world.clearEffects();
       buffs.clear();
       aaIntent.clear();
       aaIntentOverridesManualMove = false;
@@ -289,7 +326,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       buffs.tick(dt);
       const speedMultiplier = buffs.moveSpeedMultiplier();
 
-      const aaSkill = arthurSkillByHotkey('0');
+      const aaSkill = heroSkillByHotkey(heroId, '0');
       const empoweredDash = autoAttackDashEnhancement(true);
       const aaAction = aaIntent.tick({
         caster: playerUnit,
@@ -360,6 +397,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         world,
         now: 0,
         buffs,
+        castSnapshot: skillBook.active?.castSnapshot,
       });
 
       let dummyRingPulse = false;
@@ -394,6 +432,16 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         }
       }
 
+      const effectResult = world.tickEffects(dt);
+      if (effectResult.damageEvents.length > 0) {
+        const effectDamage = effectEventsToDamageResults(effectResult.damageEvents);
+        const targets = dummyAlive ? [dummyUnit, playerUnit] : [playerUnit];
+        applyDamage(targets, effectDamage);
+        world.notifyDamage(effectDamage);
+        dummyRingPulse = true;
+        if (removeDeadDummy()) dummyRemoved = true;
+      }
+
       tickDummyRegen(dt);
       if (removeDeadDummy()) dummyRemoved = true;
 
@@ -404,7 +452,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       const buttons: PracticeHudButtonState[] = [];
       const active = skillBook.active;
       for (const hotkey of ['0', '1', '2', '3'] as const) {
-        const sk = arthurSkillByHotkey(hotkey);
+        const sk = heroSkillByHotkey(heroId, hotkey);
         if (!sk) continue;
         buttons.push({
           name: sk.displayName,

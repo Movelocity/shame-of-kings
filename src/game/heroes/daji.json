@@ -1,0 +1,91 @@
+{
+  "id": "daji",
+  "displayName": "Daji",
+  "stats": {
+    "hpMax": 1000,
+    "attackDamage": 100,
+    "moveSpeed": 360
+  },
+  "skills": [
+    {
+      "id": "charm-missile",
+      "name": "魅惑之狐",
+      "hotkey": "1",
+      "hit": { "kind": "target", "range": 10 },
+      "displacement": "none",
+      "castTime": 0.2,
+      "activeTime": 0.1,
+      "recoveryTime": 0.2,
+      "cooldown": 5.0,
+      "castMode": "targeted",
+      "effect": {
+        "kind": "spawn-projectile",
+        "speed": 12,
+        "maxRange": 10,
+        "collisionRadius": 0.3,
+        "homing": true,
+        "onTargetLost": "continue-forward",
+        "damage": 180,
+        "projectileCount": 1
+      }
+    },
+    {
+      "id": "fox-fire",
+      "name": "狐火",
+      "hotkey": "2",
+      "hit": { "kind": "target", "range": 12 },
+      "displacement": "none",
+      "castTime": 0.25,
+      "activeTime": 0.1,
+      "recoveryTime": 0.25,
+      "cooldown": 8.0,
+      "castMode": "targeted",
+      "effect": {
+        "kind": "spawn-projectile",
+        "speed": 10,
+        "maxRange": 12,
+        "collisionRadius": 0.25,
+        "homing": true,
+        "onTargetLost": "expire",
+        "damage": 120,
+        "projectileCount": 3
+      }
+    },
+    {
+      "id": "charm-wave",
+      "name": "灵魂冲击",
+      "hotkey": "3",
+      "hit": { "kind": "cone", "range": 8, "halfAngleRad": 0.6 },
+      "displacement": "none",
+      "castTime": 0.3,
+      "activeTime": 0.15,
+      "recoveryTime": 0.3,
+      "cooldown": 10.0,
+      "castMode": "instant",
+      "effect": {
+        "kind": "periodic-zone",
+        "radius": 0,
+        "tickInterval": 0,
+        "ticks": 0,
+        "damage": 200
+      }
+    },
+    {
+      "id": "auto-attack",
+      "name": "普攻",
+      "hotkey": "0",
+      "hit": { "kind": "rect", "halfWidth": 0.6, "halfDepth": 2.0 },
+      "displacement": "none",
+      "castTime": 0.0,
+      "activeTime": 0.1,
+      "recoveryTime": 0.15,
+      "cooldown": 0.8,
+      "castMode": "instant",
+      "effect": {
+        "kind": "attack-damage",
+        "attackRange": 2.0,
+        "autoAcquireRangeMultiplier": 1.3
+      }
+    }
+  ]
+}

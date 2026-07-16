@@ -1,12 +1,12 @@
 // M3 T3.3:WorldState — 替换 M2 临时 DebugWorld
-// 内容:unit 注册表 + WorldLike 实现 + onDamage 订阅
-// P2 T5C.4 加 JungleMob / TowerUnit 也走 register
+// 内容:unit 注册表 + WorldLike 实现 + onDamage 订阅 + effect 生命周期
 import type { DamageResult, Unit, WorldLike } from '../skills/types';
 import type { Vec2 } from '../skills/vec2';
+import { spawnZoneIfProjectileExpired } from './skill-effects/spawn';
+import type { EffectDamageEvent, SkillEffectEntity } from './skill-effects/types';
 
 export type DamageListener = (results: readonly DamageResult[]) => void;
 
-/** 简易事件总线:Damage 结算时通知订阅者(飘字、HUD 等) */
 function createDamageBus(): {
   emit(results: readonly DamageResult[]): void;
   subscribe(fn: DamageListener): () => void;
@@ -23,37 +23,53 @@ function createDamageBus(): {
   };
 }
 
+export interface EffectTickResult {
+  readonly damageEvents: readonly EffectDamageEvent[];
+  readonly expiredIds: readonly string[];
+}
+
 export interface WorldStateInit {
   units: readonly Unit[];
-  /** 视野检测(M2 阶段总返 true;P2 T5C.3 接真实视野系统) */
   canSee?: (observer: Unit, target: Unit) => boolean;
 }
 
 export interface WorldStateHandle extends WorldLike {
-  /** unit 注册表(只读视图) */
   readonly units: ReadonlyMap<string, Unit>;
-  /** 订阅 damage 事件;返回 unsubscribe */
+  readonly effects: ReadonlyMap<string, SkillEffectEntity>;
   subscribeDamage(fn: DamageListener): () => void;
-  /** 注册新 unit(M2 阶段 P2 之前不需要;留接口) */
   register(unit: Unit): void;
-  /** 从注册表移除 unit(死亡/离场) */
   unregister(unitId: string): void;
-  /** 拿 unit(找不到返 null) */
   getUnit(id: string): Unit | null;
-  /** 维护 damageListener 通知 */
   notifyDamage(results: readonly DamageResult[]): void;
+  spawnEffect(effect: SkillEffectEntity): void;
+  tickEffects(dt: number): EffectTickResult;
+  clearEffects(): void;
 }
 
 export function createWorldState(init: WorldStateInit): WorldStateHandle {
   const unitsMap = new Map<string, Unit>();
   for (const u of init.units) unitsMap.set(u.id, u);
+  const effectsMap = new Map<string, SkillEffectEntity>();
   const canSee = init.canSee ?? (() => true);
   const bus = createDamageBus();
 
+  const effectWorld = {
+    unitsNear(_origin: Vec2, _radius: number): readonly Unit[] {
+      return Array.from(unitsMap.values());
+    },
+    getUnit(id: string): Unit | null {
+      return unitsMap.get(id) ?? null;
+    },
+    spawnEffect(effect: SkillEffectEntity): void {
+      effectsMap.set(effect.id, effect);
+    },
+    canSee(observer: Unit, target: Unit): boolean {
+      return canSee(observer, target);
+    },
+  };
+
   const world: WorldLike = {
     unitsNear(_origin: Vec2, _radius: number): readonly Unit[] {
-      // M2 阶段不做 AABB 预过滤,直接返回所有 unit
-      // P2 T5C.2 接 NavigationGrid 时换成 spatial hash
       return Array.from(unitsMap.values());
     },
     canSee(observer: Unit, target: Unit): boolean {
@@ -65,6 +81,9 @@ export function createWorldState(init: WorldStateInit): WorldStateHandle {
     ...world,
     get units() {
       return unitsMap;
+    },
+    get effects() {
+      return effectsMap;
     },
     subscribeDamage(fn) {
       return bus.subscribe(fn);
@@ -81,5 +100,49 @@ export function createWorldState(init: WorldStateInit): WorldStateHandle {
     notifyDamage(results) {
       bus.emit(results);
     },
+    spawnEffect(effect) {
+      effectsMap.set(effect.id, effect);
+    },
+    tickEffects(dt) {
+      const damageEvents: EffectDamageEvent[] = [];
+      const expiredIds: string[] = [];
+
+      for (const [id, effect] of effectsMap) {
+        if (effect.destroyWhenOwnerGone) {
+          const owner = unitsMap.get(effect.ownerId);
+          if (!owner || owner.hp <= 0) {
+            effect.expired = true;
+          }
+        }
+
+        const events = effect.tick(dt, { world: effectWorld, now: 0 });
+        damageEvents.push(...events);
+
+        if (effect.expired) {
+          spawnZoneIfProjectileExpired(effect, effectWorld);
+          expiredIds.push(id);
+        }
+      }
+
+      for (const id of expiredIds) {
+        effectsMap.delete(id);
+      }
+
+      return { damageEvents, expiredIds };
+    },
+    clearEffects() {
+      effectsMap.clear();
+    },
   };
+}
+
+/** effect 伤害事件转 DamageResult */
+export function effectEventsToDamageResults(
+  events: readonly EffectDamageEvent[],
+): DamageResult[] {
+  return events.map((e) => ({
+    targetId: e.targetId,
+    damage: e.damage,
+    isCrit: e.isCrit,
+  }));
 }

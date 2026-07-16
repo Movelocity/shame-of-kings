@@ -18,9 +18,13 @@ import { MobileControls } from './MobileControls';
 import type { Skill, SkillInstance } from '../../game/skills/types';
 import { asUnit } from '../../game/units/as-unit';
 import {
-  arthurSkillByHotkey,
-  ARTHUR_DATA,
-} from '../../game/heroes/arthur';
+  getHeroHpMax,
+  getHeroKitSkills,
+  heroSkillByHotkey,
+  HERO_IDS,
+  heroDisplayName,
+  type HeroId,
+} from '../../game/heroes/index';
 import {
   createPracticeDummy,
   PRACTICE_DUMMY_ID,
@@ -31,13 +35,18 @@ import {
 } from '../../game/world/practice-session';
 import { DamageFloaters } from '../../game/world/DamageFloaters';
 import { createHitboxVfx } from '../../game/world/HitboxVfx';
+import type { PersistentAreaEffect } from '../../game/world/skill-effects/persistent-area';
+import type { ProjectileEffect } from '../../game/world/skill-effects/projectile';
 import { createWorldHpBars, FACTION_COLORS } from '../../game/world/WorldHpBars';
 import { SkillHud, type SkillHudHandle } from './SkillHud';
 
-const ARTHUR_CAST_MODES: Readonly<Record<string, Skill['castMode']>> =
-  Object.fromEntries(
-    ARTHUR_DATA.skills.map((skill) => [skill.hotkey, skill.castMode ?? 'instant']),
+const DEFAULT_HERO: HeroId = 'arthur';
+
+function castModesForHero(heroId: HeroId): Readonly<Record<string, Skill['castMode']>> {
+  return Object.fromEntries(
+    getHeroKitSkills(heroId).map((skill) => [skill.hotkey, skill.castMode ?? 'instant']),
   );
+}
 
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
@@ -55,6 +64,8 @@ export function GameCanvas({
   const sessionRef = useRef<PracticeSession | null>(null);
   // T4 KI-4 移动端"瞄准中"状态:React state 仅用于驱动 .skill-hud__cancel.is-aiming
   const [aiming, setAiming] = useState<{ slotHotkey: string; skill: Skill } | null>(null);
+  const [heroId, setHeroId] = useState<HeroId>(DEFAULT_HERO);
+  const heroIdRef = useRef<HeroId>(DEFAULT_HERO);
   const aimStateRef = useRef<{ slotHotkey: string; skill: Skill } | null>(null);
   const setAimState = (next: { slotHotkey: string; skill: Skill } | null): void => {
     aimStateRef.current = next;
@@ -100,7 +111,7 @@ export function GameCanvas({
       requestAutoAttack();
       return;
     }
-    const skill = arthurSkillByHotkey(slotHotkey);
+    const skill = heroSkillByHotkey(heroIdRef.current, slotHotkey);
     const session = sessionRef.current;
     if (!skill || !session) return;
     if (aimStateRef.current || !session.skillBook.canStart(skill.id)) return;
@@ -159,7 +170,7 @@ export function GameCanvas({
     });
     sceneRef.current = gameScene;
 
-    const playerUnit = asUnit(gameScene.player, 'player', ARTHUR_DATA.stats.hpMax, false);
+    const playerUnit = asUnit(gameScene.player, 'player', getHeroHpMax(DEFAULT_HERO), false);
     const dummyUnit = createPracticeDummy();
     const session = createPracticeSession({ playerUnit, dummyUnit });
     sessionRef.current = session;
@@ -309,6 +320,28 @@ export function GameCanvas({
           }
           shownHitboxActivations.set(activeInst, activeInst.hitboxActivations);
         }
+
+        const activeEffectIds = new Set<string>();
+        for (const [effectId, effect] of session.world.effects) {
+          activeEffectIds.add(effectId);
+          if (effect.kind === 'projectile') {
+            const projectile = effect as ProjectileEffect;
+            hitboxVfx.bindEffect(
+              effectId,
+              { kind: 'circle', radius: projectile.collisionRadius },
+              () => projectile.getPosition(),
+            );
+          } else if (effect.kind === 'persistent-area') {
+            const zone = effect as PersistentAreaEffect;
+            hitboxVfx.bindEffect(
+              effectId,
+              { kind: 'circle', radius: zone.config.radius },
+              () => zone.position,
+            );
+          }
+        }
+        hitboxVfx.pruneBoundEffects(activeEffectIds);
+
         if (post.dummyRingPulse) {
           gameScene.dummy.setRingPulse(1);
         }
@@ -384,14 +417,52 @@ export function GameCanvas({
       )}
       <SkillHud
         ref={skillHudRef}
-        heroSkills={ARTHUR_DATA.skills}
+        heroSkills={getHeroKitSkills(heroId)}
         inputMode={mobile ? 'mobile' : 'desktop'}
         onPressStart={onSkillPressStart}
         onAttackModePress={onAttackModePress}
         onPressEnd={onSkillPressEnd}
         aimingSlotHotkey={aiming?.slotHotkey ?? null}
-        castModes={ARTHUR_CAST_MODES}
+        castModes={castModesForHero(heroId)}
       />
+      {import.meta.env.DEV && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 8,
+            left: 8,
+            zIndex: 20,
+            display: 'flex',
+            gap: 4,
+            background: 'rgba(0,0,0,0.5)',
+            padding: '4px 8px',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {HERO_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                heroIdRef.current = id;
+                setHeroId(id);
+                sessionRef.current?.setHero(id);
+              }}
+              style={{
+                padding: '2px 8px',
+                background: heroId === id ? '#4a90d9' : '#333',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 3,
+                cursor: 'pointer',
+              }}
+            >
+              {heroDisplayName(id)}
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }

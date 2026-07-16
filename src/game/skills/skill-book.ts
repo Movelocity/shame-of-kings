@@ -1,5 +1,5 @@
 import { startSkill, type CastOptions } from './runtime';
-import type { Skill, SkillContext, SkillInstance, Unit } from './types';
+import type { CastSnapshot, Skill, SkillContext, SkillInstance, Unit } from './types';
 
 /**
  * 统一管理当前施法与每个技能自己的冷却。
@@ -12,7 +12,7 @@ import type { Skill, SkillContext, SkillInstance, Unit } from './types';
 export interface SkillBook {
   readonly active: SkillInstance | null;
   canStart(skillId: string): boolean;
-  start(skill: Skill, caster: Unit, options: CastOptions): SkillInstance | null;
+  start(skill: Skill, caster: Unit, options: CastSnapshot | CastOptions): SkillInstance | null;
   cooldownRemaining(skillId: string): number;
   tick(dt: number, context: SkillContext): readonly SkillInstance[];
   reset(): void;
@@ -49,7 +49,10 @@ export function createSkillBook(): SkillBook {
       const completed: SkillInstance[] = [];
       for (const [skillId, instance] of cooldowns) {
         const wasActive = instance === active;
-        instance.tick(dt, context);
+        const ctxWithSnapshot: SkillContext = active === instance
+          ? { ...context, castSnapshot: instance.castSnapshot }
+          : context;
+        instance.tick(dt, ctxWithSnapshot);
 
         if (wasActive && instance.phase === 'done') {
           completed.push(instance);

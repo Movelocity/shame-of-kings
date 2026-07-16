@@ -5,6 +5,7 @@ import {
   tickCc,
 } from '../../src/game/combat/unit-cc';
 import type { Unit } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
 function mkUnit(id = 'dummy'): Unit {
   return {
@@ -14,6 +15,7 @@ function mkUnit(id = 'dummy'): Unit {
     hp: 1000,
     hpMax: 1000,
     isStatic: true,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
   };

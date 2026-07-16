@@ -1,6 +1,7 @@
 // 把 EntityVisualHandle 包装为 Skill 框架的 Unit。
 import type { EntityVisualHandle } from '../../engine/renderer/entity-visuals';
 import type { Unit } from '../skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../skills/types';
 
 export function asUnit(
   visual: EntityVisualHandle,
@@ -15,6 +16,7 @@ export function asUnit(
     hp,
     hpMax: hp,
     isStatic,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set<string>() },
   };

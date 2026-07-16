@@ -18,6 +18,7 @@ const DEFAULT_LIFE = 0.35;
 const Y = 0.06;
 const COLOR = 0xffc14a;
 const OPACITY = 0.45;
+const BOUND_OPACITY = 0.3;
 
 interface Flash {
   mesh: Mesh;
@@ -28,12 +29,28 @@ interface Flash {
   forwardRad: number;
 }
 
+interface BoundFlash {
+  mesh: Mesh;
+  material: MeshBasicMaterial;
+  originProvider: () => Vec2;
+  forwardRad: number;
+}
+
 export interface HitboxVfxHandle {
   readonly group: Group;
   /** 在 origin 处以 forwardRad 朝向画一次命中盒 */
   spawn(shape: HitShape, origin: Vec2, forwardRad: number): void;
   /** 在短暂显示期间持续贴住 originProvider 返回的位置 */
   spawnAttached(shape: HitShape, originProvider: () => Vec2, forwardRad: number): void;
+  /** 绑定 effect 几何,直到 pruneBoundEffects 移除 */
+  bindEffect(
+    id: string,
+    shape: HitShape,
+    originProvider: () => Vec2,
+    forwardRad?: number,
+  ): void;
+  /** 移除已过期 effect 的绑定几何 */
+  pruneBoundEffects(activeIds: ReadonlySet<string>): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -123,6 +140,7 @@ export function createHitboxVfx(): HitboxVfxHandle {
   const group = new Group();
   group.name = 'hitbox-vfx';
   const flashes: Flash[] = [];
+  const bound = new Map<string, BoundFlash>();
 
   function spawn(shape: HitShape, origin: Vec2, forwardRad: number): void {
     const mesh = buildMesh(shape);
@@ -155,6 +173,35 @@ export function createHitboxVfx(): HitboxVfxHandle {
     });
   }
 
+  function bindEffect(
+    id: string,
+    shape: HitShape,
+    originProvider: () => Vec2,
+    forwardRad = 0,
+  ): void {
+    let entry = bound.get(id);
+    if (!entry) {
+      const mesh = buildMesh(shape);
+      const material = mesh.material as MeshBasicMaterial;
+      material.opacity = BOUND_OPACITY;
+      applyPose(mesh, originProvider(), forwardRad);
+      group.add(mesh);
+      entry = { mesh, material, originProvider, forwardRad };
+      bound.set(id, entry);
+    }
+    applyPose(entry.mesh, entry.originProvider(), entry.forwardRad);
+  }
+
+  function pruneBoundEffects(activeIds: ReadonlySet<string>): void {
+    for (const [id, entry] of bound) {
+      if (activeIds.has(id)) continue;
+      group.remove(entry.mesh);
+      entry.mesh.geometry.dispose();
+      entry.material.dispose();
+      bound.delete(id);
+    }
+  }
+
   function update(dt: number): void {
     for (let i = flashes.length - 1; i >= 0; i--) {
       const f = flashes[i]!;
@@ -174,6 +221,10 @@ export function createHitboxVfx(): HitboxVfxHandle {
       f.material.opacity =
         t < 0.45 ? OPACITY : Math.max(0, OPACITY * (1 - (t - 0.45) / 0.55));
     }
+
+    for (const entry of bound.values()) {
+      applyPose(entry.mesh, entry.originProvider(), entry.forwardRad);
+    }
   }
 
   function dispose(): void {
@@ -183,7 +234,13 @@ export function createHitboxVfx(): HitboxVfxHandle {
       f.material.dispose();
     }
     flashes.length = 0;
+    for (const entry of bound.values()) {
+      group.remove(entry.mesh);
+      entry.mesh.geometry.dispose();
+      entry.material.dispose();
+    }
+    bound.clear();
   }
 
-  return { group, spawn, spawnAttached, update, dispose };
+  return { group, spawn, spawnAttached, bindEffect, pruneBoundEffects, update, dispose };
 }

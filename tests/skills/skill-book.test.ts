@@ -3,6 +3,7 @@ import { arthurSkillByHotkey } from '../../src/game/heroes/arthur';
 import { createSkillBook } from '../../src/game/skills/skill-book';
 import { makeSkill } from '../../src/game/skills/runtime';
 import type { SkillContext, Unit, WorldLike } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
 function makeUnit(id: string): Unit {
   return {
@@ -12,6 +13,7 @@ function makeUnit(id: string): Unit {
     hp: 100,
     hpMax: 100,
     isStatic: false,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
   };

@@ -6,6 +6,7 @@ import {
   findNearestEnemy,
 } from '../../src/game/combat/auto-attack-intent';
 import type { Unit, WorldLike } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
 function mkUnit(
   id: string,
@@ -19,6 +20,7 @@ function mkUnit(
     hp: rest.hp ?? 100,
     hpMax: rest.hpMax ?? 100,
     isStatic: rest.isStatic ?? false,
+    collisionRadius: rest.collisionRadius ?? DEFAULT_COLLISION_RADIUS,
     facingRad: rest.facingRad ?? 0,
     hidden: rest.hidden ?? { inBush: false, outOfVisionFrom: new Set() },
   };

@@ -2,8 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import { ARTHUR_DATA } from '../../src/game/heroes/arthur';
 import { createPracticeDummy, PRACTICE_DUMMY_REGEN_PER_SEC } from '../../src/game/units/practice-dummy';
+import { createCastSnapshot } from '../../src/game/skills/cast-snapshot';
+import { spawnProjectile } from '../../src/game/world/skill-effects/spawn';
 import { createPracticeSession } from '../../src/game/world/practice-session';
 import type { Unit } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
 function makePlayer(spawn = { x: 2, z: 10 }): Unit {
   return {
@@ -13,6 +16,7 @@ function makePlayer(spawn = { x: 2, z: 10 }): Unit {
     hp: ARTHUR_DATA.stats.hpMax,
     hpMax: ARTHUR_DATA.stats.hpMax,
     isStatic: false,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0.5,
     hidden: { inBush: false, outOfVisionFrom: new Set<string>() },
   };
@@ -286,6 +290,41 @@ describe('createPracticeSession', () => {
 
     expect(post.dummyRemoved).toBe(true);
     expect(session.world.getUnit(dummy.id)).toBeNull();
+  });
+
+  it('resetWorld 清空 effects', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer() });
+    const snapshot = createCastSnapshot({
+      casterId: 'player',
+      skillId: 'test',
+      origin: { x: 0, z: 0 },
+      forwardRad: 0,
+    });
+    session.world.spawnEffect(
+      spawnProjectile({
+        ownerId: 'player',
+        sourceTeam: 'blue',
+        skillId: 'test',
+        origin: snapshot.origin,
+        forwardRad: 0,
+        speed: 5,
+        maxRange: 10,
+        damage: { amount: 10 },
+      }),
+    );
+    expect(session.world.effects.size).toBe(1);
+    session.resetWorld();
+    expect(session.world.effects.size).toBe(0);
+  });
+
+  it('切换英雄清空状态', () => {
+    const session = createPracticeSession({ playerUnit: makePlayer(), heroId: 'arthur' });
+    session.tryCastHotkey('1');
+    expect(session.skillBook.active).not.toBeNull();
+    session.setHero('daji');
+    expect(session.heroId).toBe('daji');
+    expect(session.skillBook.active).toBeNull();
+    expect(session.skillBook.canStart('charm-missile')).toBe(true);
   });
 
   it('resetWorld 可恢复已死亡木人桩', () => {

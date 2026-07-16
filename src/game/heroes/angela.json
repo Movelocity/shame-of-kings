@@ -1,0 +1,89 @@
+{
+  "id": "angela",
+  "displayName": "Angela",
+  "stats": {
+    "hpMax": 950,
+    "attackDamage": 90,
+    "moveSpeed": 350
+  },
+  "skills": [
+    {
+      "id": "fireball",
+      "name": "火球术",
+      "hotkey": "2",
+      "hit": { "kind": "self" },
+      "displacement": "none",
+      "castTime": 0.3,
+      "activeTime": 0.1,
+      "recoveryTime": 0.3,
+      "cooldown": 6.0,
+      "castMode": "instant",
+      "effect": {
+        "kind": "projectile-then-zone",
+        "projectileSpeed": 15,
+        "projectileMaxRange": 12,
+        "projectileCollisionRadius": 0.4,
+        "projectileDamage": 200,
+        "zoneRadius": 2.5,
+        "zoneTickInterval": 0.5,
+        "zoneTicks": 4,
+        "zoneDamage": 60
+      }
+    },
+    {
+      "id": "flame-burst",
+      "name": "火焰冲击",
+      "hotkey": "1",
+      "hit": { "kind": "cone", "range": 7, "halfAngleRad": 0.5 },
+      "displacement": "none",
+      "castTime": 0.2,
+      "activeTime": 0.15,
+      "recoveryTime": 0.2,
+      "cooldown": 5.0,
+      "castMode": "instant",
+      "effect": {
+        "kind": "periodic-zone",
+        "radius": 0,
+        "tickInterval": 0,
+        "ticks": 0,
+        "damage": 150
+      }
+    },
+    {
+      "id": "inferno",
+      "name": "炽热光辉",
+      "hotkey": "3",
+      "hit": { "kind": "circle", "radius": 4 },
+      "displacement": "none",
+      "castTime": 0.4,
+      "activeTime": 0.2,
+      "recoveryTime": 0.4,
+      "cooldown": 12.0,
+      "castMode": "instant",
+      "effect": {
+        "kind": "periodic-zone",
+        "radius": 4,
+        "tickInterval": 0.4,
+        "ticks": 5,
+        "damage": 80
+      }
+    },
+    {
+      "id": "auto-attack",
+      "name": "普攻",
+      "hotkey": "0",
+      "hit": { "kind": "rect", "halfWidth": 0.5, "halfDepth": 2.0 },
+      "displacement": "none",
+      "castTime": 0.0,
+      "activeTime": 0.1,
+      "recoveryTime": 0.15,
+      "cooldown": 0.9,
+      "castMode": "instant",
+      "effect": {
+        "kind": "attack-damage",
+        "attackRange": 2.0,
+        "autoAcquireRangeMultiplier": 1.3
+      }
+    }
+  ]
+}

@@ -2,15 +2,17 @@
 import { describe, expect, it } from 'vitest';
 import { hitCircle, hitCone, hitRect, hitTarget, resolveHits } from '../../src/game/skills/hits';
 import type { Unit, WorldLike } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
-function mkUnit(id: string, x: number, z: number): Unit {
+function mkUnit(id: string, x: number, z: number, team: Unit['team'] = 'neutral'): Unit {
   return {
     id,
-    team: 'neutral',
+    team,
     position: { x, z },
     hp: 100,
     hpMax: 100,
     isStatic: true,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
   };
@@ -18,8 +20,10 @@ function mkUnit(id: string, x: number, z: number): Unit {
 
 function mkWorld(units: Unit[]): WorldLike {
   return {
-    unitsNear(_origin, radius) {
-      return units.filter((u) => Math.hypot(u.position.x, u.position.z) <= radius + 1);
+    unitsNear(origin, radius) {
+      return units.filter(
+        (u) => Math.hypot(u.position.x - origin.x, u.position.z - origin.z) <= radius + 1,
+      );
     },
     canSee() { return true; },
   };
@@ -146,8 +150,8 @@ describe('resolveHits 统一入口', () => {
 
   it('originOverride 会改变命中盒参考点', () => {
     const fixedOrigin = { x: 10, z: 0 };
-    const fixedTarget = mkUnit('fixed-target', 11, 0);
-    const movingCaster = mkUnit('caster', 0, 0);
+    const fixedTarget = mkUnit('fixed-target', 11, 0, 'neutral');
+    const movingCaster = mkUnit('caster', 0, 0, 'blue');
     const movingWorld = mkWorld([movingCaster, fixedTarget]);
 
     const hits = resolveHits(
@@ -155,7 +159,7 @@ describe('resolveHits 统一入口', () => {
       movingCaster,
       { kind: 'circle', radius: 2 },
       0,
-      fixedOrigin,
+      { origin: fixedOrigin },
     );
 
     expect(hits.map((h) => h.target!.id)).toEqual(['fixed-target']);

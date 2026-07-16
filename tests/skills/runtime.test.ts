@@ -7,15 +7,17 @@ import {
   startSkill,
 } from '../../src/game/skills/runtime';
 import type { SkillContext, Unit, WorldLike } from '../../src/game/skills/types';
+import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 
-function mkUnit(id: string, x: number, z: number, hp = 100): Unit {
+function mkUnit(id: string, x: number, z: number, hp = 100, team: Unit['team'] = 'red'): Unit {
   return {
     id,
-    team: 'blue',
+    team,
     position: { x, z },
     hp,
     hpMax: hp,
     isStatic: false,
+    collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
   };
@@ -34,7 +36,7 @@ function mkCtx(caster: Unit, world: WorldLike, now = 0): SkillContext {
 
 describe('SkillInstance 状态机', () => {
   it('cast → active → recovery → done 全流程', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const target = mkUnit('target', 1, 0);
     const world = mkWorld([caster, target]);
     const skill = makeSkill({
@@ -75,7 +77,7 @@ describe('SkillInstance 状态机', () => {
   });
 
   it('单次伤害 active 内多 tick 不重复结算', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const target = mkUnit('target', 1, 0);
     const world = mkWorld([caster, target]);
     const skill = makeSkill({
@@ -100,7 +102,7 @@ describe('SkillInstance 状态机', () => {
   });
 
   it('cancel() 任意阶段直接置 done', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const target = mkUnit('target', 0, -5);
     const world = mkWorld([caster, target]);
     const skill = makeSkill({
@@ -123,7 +125,7 @@ describe('SkillInstance 状态机', () => {
   });
 
   it('displacement=dash 按速度逐帧推进，不是瞬移', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const target = mkUnit('target', 0, -5);
     const world = mkWorld([caster, target]);
     const skill = makeSkill({
@@ -160,7 +162,7 @@ describe('SkillInstance 状态机', () => {
   });
 
   it('displacement=teleport 才会单帧到达终点', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const world = mkWorld([caster]);
     const skill = makeSkill({
       id: 'test-teleport',
@@ -180,7 +182,7 @@ describe('SkillInstance 状态机', () => {
   });
 
   it('displacement=ground 不自动移动(由 controller 推进,M2 留口子)', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const world = mkWorld([caster]);
     const skill = makeSkill({
       id: 'test-ground',
@@ -201,7 +203,7 @@ describe('SkillInstance 状态机', () => {
 
 describe('DamageFormula 视野过滤', () => {
   it('canSee=false 时 simpleDamage 返回 null,目标不掉血', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const target = mkUnit('target', 1, 0);
     const world = mkWorld([caster, target], false); // 不可见
     const skill = makeSkill({
@@ -221,7 +223,7 @@ describe('DamageFormula 视野过滤', () => {
   });
 
   it('ignoreVisibility=true 时强制命中', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const target = mkUnit('target', 1, 0);
     const world = mkWorld([caster, target], false);
     const skill = makeSkill({
@@ -261,7 +263,7 @@ describe('cooldownTimer', () => {
   // KI-1 修法:startSkill 立即置 cooldownTimer;每 tick 减 dt;done 后仍按剩余值倒计时
   // 持续到 ≤ 0(由 caller 在下次施法入口判断,见 GameCanvas.onKeyDown)。
   it('startSkill 立即置为 skill.cooldown,每 tick 减 dt', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const world = mkWorld([caster]);
     const skill = makeSkill({
       id: 'test-cd',
@@ -283,7 +285,7 @@ describe('cooldownTimer', () => {
   });
 
   it('cooldownTimer 跨 done 继续减(允许 caller 在 next施法时拦截)', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const world = mkWorld([caster]);
     const skill = makeSkill({
       id: 'test-cd-done',
@@ -307,7 +309,7 @@ describe('cooldownTimer', () => {
   });
 
   it('cancel() 保留 cooldownTimer 倒计时(CD 不退回,符合"按过就算按过"的直觉)', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const world = mkWorld([caster]);
     const skill = makeSkill({
       id: 'test-cancel-cd',
@@ -360,7 +362,7 @@ describe('castMode 默认值', () => {
 
 describe('onActivate', () => {
   it('进入 active 时回调一次,后续 active tick 不再调', () => {
-    const caster = mkUnit('caster', 0, 0);
+    const caster = mkUnit('caster', 0, 0, 100, 'blue');
     const world = mkWorld([caster]);
     let calls = 0;
     const skill = makeSkill({

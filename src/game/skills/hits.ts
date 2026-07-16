@@ -8,8 +8,25 @@
 //  - M3 T3.2 PracticeDummy 与 T3.1 亚瑟共用(本文件无 Unit 引用)
 //  - P2 T5C.3 VisionSystem 把 hit.target 拿去做 canSee 过滤,
 //    所以本文件不内置视野判断;留给 DamageFormula。
-import type { Hit, HitShape, Unit, WorldLike } from './types';
+import { filterTargets } from '../combat/target-filter';
+import type { Hit, HitShape, TargetFilter, Unit, WorldLike } from './types';
 import type { Vec2 } from './vec2';
+
+export interface ResolveHitsOptions {
+  origin?: Vec2;
+  filter?: TargetFilter;
+  /** 锁定目标 id;hitTarget 优先使用,不重新最近邻 */
+  lockedTargetId?: string;
+}
+
+function eligible(
+  candidates: readonly Unit[],
+  caster: Unit,
+  filter: TargetFilter | undefined,
+): Unit[] {
+  if (filter) return filterTargets(candidates, filter);
+  return candidates.filter((u) => u.id !== caster.id);
+}
 
 /** self: 命中施法者自身(主要给治疗 / 增益类技能用) */
 export function hitSelf(caster: Unit, origin: Vec2 = caster.position): readonly Hit[] {
@@ -22,11 +39,11 @@ export function hitCircle(
   caster: Unit,
   shape: Extract<HitShape, { kind: 'circle' }>,
   origin: Vec2 = caster.position,
+  filter?: TargetFilter,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(origin, shape.radius);
+  const candidates = eligible(world.unitsNear(origin, shape.radius), caster, filter);
   const hits: Hit[] = [];
   for (const u of candidates) {
-    if (u.id === caster.id) continue;
     const dx = u.position.x - origin.x;
     const dz = u.position.z - origin.z;
     if (dx * dx + dz * dz <= shape.radius * shape.radius) {
@@ -49,20 +66,21 @@ export function hitRect(
   shape: Extract<HitShape, { kind: 'rect' }>,
   forwardRad: number,
   origin: Vec2 = caster.position,
+  filter?: TargetFilter,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(origin, shape.halfDepth + shape.halfWidth);
-  // forward 单位向量(f=0 → (0, -1));right 单位向量(f=0 → (-1, 0))
+  const candidates = eligible(
+    world.unitsNear(origin, shape.halfDepth + shape.halfWidth),
+    caster,
+    filter,
+  );
   const fx = Math.sin(forwardRad);
   const fz = -Math.cos(forwardRad);
   const rx = -Math.cos(forwardRad);
   const rz = -Math.sin(forwardRad);
   const hits: Hit[] = [];
   for (const u of candidates) {
-    if (u.id === caster.id) continue;
     const dx = u.position.x - origin.x;
     const dz = u.position.z - origin.z;
-    // localZ = 点积(d, forward);localX = 点积(d, right)
-    // 矩形是"前方的 AABB",localZ 必须 ≥ 0 才算命中(后方不命中)
     const localZ = dx * fx + dz * fz;
     const localX = dx * rx + dz * rz;
     if (
@@ -84,23 +102,19 @@ export function hitCone(
   shape: Extract<HitShape, { kind: 'cone' }>,
   forwardRad: number,
   origin: Vec2 = caster.position,
+  filter?: TargetFilter,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(origin, shape.range);
+  const candidates = eligible(world.unitsNear(origin, shape.range), caster, filter);
   const hits: Hit[] = [];
-  // Math.cos(π/2) 浮点误差 ≈ 6e-17,会误判"半角 90° 不命中"。
-  // 同时 cos(45°) 也有 ~1e-16 误差会让边缘样本漏掉;统一夹 1e-9 容差
   const rawCos = Math.cos(shape.halfAngleRad);
   const cosThreshold = rawCos < 0 ? 0 : Math.max(0, rawCos - 1e-9);
-  // forward 单位向量(f=0 → (0, -1))
   const fx = Math.sin(forwardRad);
   const fz = -Math.cos(forwardRad);
   for (const u of candidates) {
-    if (u.id === caster.id) continue;
     const dx = u.position.x - origin.x;
     const dz = u.position.z - origin.z;
     const dist = Math.hypot(dx, dz);
     if (dist > shape.range || dist < 1e-6) continue;
-    // 点积(d, forward) / |d| = cosAngle
     const cosAngle = (dx * fx + dz * fz) / dist;
     if (cosAngle >= cosThreshold) {
       hits.push({ target: u, origin, forwardRad });
@@ -109,17 +123,28 @@ export function hitCone(
   return hits;
 }
 
-/** target: 锁定距离内最近的目标(单一命中) */
+/** target: 锁定距离内最近的目标(单一命中);lockedTargetId 优先 */
 export function hitTarget(
   world: WorldLike,
   caster: Unit,
   shape: Extract<HitShape, { kind: 'target' }>,
   origin: Vec2 = caster.position,
+  filter?: TargetFilter,
+  lockedTargetId?: string,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(origin, shape.range);
+  if (lockedTargetId) {
+    const locked = world.unitsNear(origin, shape.range).find((u) => u.id === lockedTargetId);
+    if (!locked) return [];
+    if (filter && !filterTargets([locked], filter).length) return [];
+    const dx = locked.position.x - origin.x;
+    const dz = locked.position.z - origin.z;
+    if (Math.hypot(dx, dz) > shape.range) return [];
+    return [{ target: locked, origin, forwardRad: 0 }];
+  }
+
+  const candidates = eligible(world.unitsNear(origin, shape.range), caster, filter);
   let best: { unit: Unit; dist: number } | null = null;
   for (const u of candidates) {
-    if (u.id === caster.id) continue;
     const dx = u.position.x - origin.x;
     const dz = u.position.z - origin.z;
     const dist = Math.hypot(dx, dz);
@@ -131,27 +156,27 @@ export function hitTarget(
   return best ? [{ target: best.unit, origin, forwardRad: 0 }] : [];
 }
 
-/** 统一入口:按 HitShape 分派。M2 阶段 T2.4 调试技能和 M3 亚瑟都用它
- *  forwardRad 由调用方传(从 SkillInstance.forwardRad 来),不放在 shape 上
- *  是为了让 HitShape 保持"静态配置"语义,避免每次施法都要克隆 shape。 */
+/** 统一入口:按 HitShape 分派 */
 export function resolveHits(
   world: WorldLike,
   caster: Unit,
   shape: HitShape,
   forwardRad: number,
-  originOverride?: Vec2,
+  options: ResolveHitsOptions = {},
 ): readonly Hit[] {
-  const origin = originOverride ?? caster.position;
+  const origin = options.origin ?? caster.position;
+  const filter = options.filter;
+  const lockedTargetId = options.lockedTargetId;
   switch (shape.kind) {
     case 'self':
       return hitSelf(caster, origin);
     case 'circle':
-      return hitCircle(world, caster, shape, origin);
+      return hitCircle(world, caster, shape, origin, filter);
     case 'rect':
-      return hitRect(world, caster, shape, forwardRad, origin);
+      return hitRect(world, caster, shape, forwardRad, origin, filter);
     case 'cone':
-      return hitCone(world, caster, shape, forwardRad, origin);
+      return hitCone(world, caster, shape, forwardRad, origin, filter);
     case 'target':
-      return hitTarget(world, caster, shape, origin);
+      return hitTarget(world, caster, shape, origin, filter, lockedTargetId);
   }
 }

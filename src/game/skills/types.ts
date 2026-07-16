@@ -39,6 +39,44 @@ export type HitOrigin = 'caster' | 'cast';
 
 export type Team = 'blue' | 'red' | 'neutral';
 
+/** 单位 hurtbox 默认半径(世界单位) */
+export const DEFAULT_COLLISION_RADIUS = 0.5;
+
+/**
+ * 不可变施法快照:在施法开始时冻结,贯穿 SkillInstance 与 effect spawn。
+ * 替代旧版 CastOptions 的施法语义(**BREAKING**)。
+ */
+export interface CastSnapshot {
+  readonly castId: string;
+  readonly casterId: string;
+  readonly skillId: string;
+  /** 值拷贝的施法原点 */
+  readonly origin: Vec2;
+  readonly forwardRad: number;
+  /** 锁定类技能的目标 id;几何层不得重新最近邻替换 */
+  readonly targetId?: string;
+  readonly targetPoint?: Vec2;
+  /** 本次 dash 距离;由 snapshot 构建时根据 targetId 计算 */
+  readonly dashDistance?: number;
+}
+
+/** effect 生成时冻结的伤害数值 */
+export interface DamageSnapshot {
+  readonly amount: number;
+  readonly isCrit?: boolean;
+  readonly scalesWithAttackPower?: boolean;
+}
+
+/**
+ * 命中粗筛:阵营/存活/可选中。视野由 DamageFormula + canSee 在结算时判定。
+ */
+export interface TargetFilter {
+  readonly casterId: string;
+  readonly casterTeam: Team;
+  /** 是否包含中立单位(默认 true,与 findNearestEnemy 一致) */
+  readonly includeNeutral?: boolean;
+}
+
 export interface HiddenState {
   /** 草丛遮挡:草丛内对外不可见 */
   inBush: boolean;
@@ -57,6 +95,8 @@ export interface Unit {
   hp: number;
   hpMax: number;
   isStatic: boolean; // 木人桩 / 防御塔为 true
+  /** hurtbox 半径(世界单位);弹道扫掠碰撞使用 */
+  collisionRadius: number;
   /** 朝向(世界 -Z = 0,逆时针为正)。M3 阶段默认 0;M5 元歌/M6 镜复用为指向性技能 forwardRad 来源。 */
   facingRad: number;
   hidden: HiddenState;
@@ -111,6 +151,8 @@ export interface SkillContext {
    * 由 GameCanvas(或测试)喂入同一份 createBuffBag()。
    */
   buffs?: BuffBag;
+  /** 当前施法快照;onActivate spawn effect 时使用 */
+  castSnapshot?: CastSnapshot;
 }
 
 /** World 抽象(避免 skills/ 反向依赖 world/ 的具体类)。
@@ -186,6 +228,8 @@ export interface SkillInstance {
   origin: Vec2;
   /** 施法时朝向(命中盒用) */
   forwardRad: number;
+  /** 施法快照;effect spawn 与锁定目标使用 */
+  readonly castSnapshot: CastSnapshot;
   /** 中断接口:reset / 被打断技能时调,直接 phase='done' */
   cancel(): void;
   /** 本帧(或最近一次)结算的伤害结果;供 caller 触发飘字/扣血 */

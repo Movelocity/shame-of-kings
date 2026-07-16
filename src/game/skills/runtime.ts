@@ -12,6 +12,7 @@
 //  - cooldownTimer 在 onCast 立即置为 cooldown；done 后仍需由上层持续 tick 到 0
 //  - cancel():任意阶段直接置 done,后续 tick 立刻返回
 import type {
+  CastSnapshot,
   DamageResult,
   Hit,
   HitShape,
@@ -21,16 +22,38 @@ import type {
   Unit,
   WorldLike,
 } from './types';
+import { defaultTargetFilter } from '../combat/target-filter';
 import { resolveHits } from './hits';
 import { vec2Add, type Vec2 } from './vec2';
 
+/** @deprecated 使用 CastSnapshot */
 export interface CastOptions {
-  /** 施法时朝向(rad);0 = world -Z */
   forwardRad: number;
-  /** 施法原点;缺省用 caster.position */
   origin?: Vec2;
-  /** 本次施法的 dash 距离;用于按目标距离落点 */
   dashDistance?: number;
+  targetId?: string;
+}
+
+/** 从 CastSnapshot 或旧版 CastOptions 构建快照 */
+export function toCastSnapshot(
+  skill: Skill,
+  caster: Unit,
+  input: CastSnapshot | CastOptions,
+): CastSnapshot {
+  if ('castId' in input && 'casterId' in input) {
+    return input;
+  }
+  const opts = input as CastOptions;
+  const castOrigin = opts.origin ?? caster.position;
+  return {
+    castId: `cast-${skill.id}-${Date.now()}`,
+    casterId: caster.id,
+    skillId: skill.id,
+    origin: { x: castOrigin.x, z: castOrigin.z },
+    forwardRad: opts.forwardRad,
+    targetId: opts.targetId,
+    dashDistance: opts.dashDistance,
+  };
 }
 
 /** 创建一个 SkillInstance。caller 负责把它推进到 world.activeSkill,
@@ -38,17 +61,18 @@ export interface CastOptions {
 export function startSkill(
   skill: Skill,
   caster: Unit,
-  opts: CastOptions,
+  snapshot: CastSnapshot | CastOptions,
 ): SkillInstance {
-  const castOrigin = opts.origin ?? caster.position;
-  const origin = { x: castOrigin.x, z: castOrigin.z };
-  const forward = opts.forwardRad;
-  const dashDistanceTotal = opts.dashDistance ?? skill.dashDistance;
+  const snap = toCastSnapshot(skill, caster, snapshot);
+  const origin = snap.origin;
+  const forward = snap.forwardRad;
+  const dashDistanceTotal = snap.dashDistance ?? skill.dashDistance;
   let dashDistanceTravelled = 0;
   let damageTicksDone = 0;
   let intervalDamageAccum = 0;
   /** 非 interval 技能:active 内只结算一次命中 */
   let singleHitResolved = false;
+  const targetFilter = defaultTargetFilter(caster);
   const inst: SkillInstance = {
     skill,
     phase: 'cast',
@@ -56,6 +80,7 @@ export function startSkill(
     cooldownTimer: skill.cooldown,
     origin,
     forwardRad: forward,
+    castSnapshot: snap,
     damage: [],
     hitboxActivations: 0,
     dashDistanceTravelled: 0,
@@ -85,8 +110,12 @@ export function startSkill(
           dashDistanceTravelled = dashDistanceTotal;
           inst.dashDistanceTravelled = dashDistanceTotal;
         }
-        // T35.2:进入 active 时回调一次(契约之盾等挂 buff)
-        skill.onActivate?.(ctx);
+        // T35.2:进入 active 时回调一次(契约之盾等挂 buff / spawn effect)
+        if (skill.onActivate) {
+          skill.onActivate({ ...ctx, castSnapshot: snap });
+          // 脱手 effect 技能无 active 伤害 tick,仍需触发命中盒 VFX
+          inst.hitboxActivations += 1;
+        }
       }
       if (inst.phase === 'active') {
         if (
@@ -129,7 +158,11 @@ export function startSkill(
               caster,
               skill.hit,
               forward,
-              hitOrigin(skill, inst, caster),
+              {
+                origin: hitOrigin(skill, inst, caster),
+                filter: targetFilter,
+                lockedTargetId: snap.targetId,
+              },
             );
             if (skill.damage) {
               for (const h of hits) {
@@ -147,7 +180,11 @@ export function startSkill(
             caster,
             skill.hit,
             forward,
-            hitOrigin(skill, inst, caster),
+            {
+              origin: hitOrigin(skill, inst, caster),
+              filter: targetFilter,
+              lockedTargetId: snap.targetId,
+            },
           );
           const results: DamageResult[] = [];
           for (const h of hits) {
