@@ -2,6 +2,7 @@ import type { CastSnapshot, DamageSnapshot, Team } from '../../skills/types';
 import type { Vec2 } from '../../skills/vec2';
 import { createPersistentAreaEffect } from './persistent-area';
 import { createProjectileEffect } from './projectile';
+import { createSweptRectEffect } from './swept-rect';
 import type {
   HitPolicy,
   OnTargetLostPolicy,
@@ -111,6 +112,30 @@ export function spawnProjectilesFromCast(
       targetId: snapshot.targetId,
     }),
   );
+}
+
+/** 从 CastSnapshot 生成脱手矩形剑气 */
+export function spawnSweptRectFromCast(
+  snapshot: CastSnapshot,
+  sourceTeam: Team,
+  skillId: string,
+  params: {
+    speed: number;
+    maxRange: number;
+    halfWidth: number;
+    halfDepth: number;
+    damage: DamageSnapshot;
+  },
+): SkillEffectEntity {
+  return createSweptRectEffect(snapshot.casterId, sourceTeam, skillId, {
+    speed: params.speed,
+    maxRange: params.maxRange,
+    halfWidth: params.halfWidth,
+    halfDepth: params.halfDepth,
+    damage: params.damage,
+    origin: snapshot.origin,
+    forwardRad: snapshot.forwardRad,
+  });
 }
 
 /** 弹道过期时若配置了 zone,在撞击点生成持续区域 */

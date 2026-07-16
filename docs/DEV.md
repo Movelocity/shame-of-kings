@@ -230,6 +230,23 @@ pnpm dev
 
 映射实现见 `src/engine/input/desktop-skill-hotkeys.ts`；内部 hero kit 槽位约定不变（`0` 普攻 + `1`–`3` 主动）。
 
+### 8.2 DEV 瞄准调试（hold-release）
+
+**仅 `import.meta.env.DEV` 构建生效**；生产构建仍按 JSON `castMode` 即时施法。
+
+| 行为 | 说明 |
+|---|---|
+| **按住技能键** | 进入瞄准会话；持续显示 `aim-preview` 命中盒，**不进 CD、不施法** |
+| **抬起（非取消区）** | 提交施法，构建 `CastSnapshot` 后 `SkillBook.start` |
+| **抬起在取消区 / Esc** | 取消瞄准，不施法 |
+| **瞄准期移动输入** | 左摇杆 / WASD 优先用于 `aimForwardRad`（`aimKind: direction`）；角色不位移 |
+| **脚下指示器** | `aimKind: direction` 显示箭头；`lock-target` 显示范围环 + 锁定连线；亚瑟 `aimKind: none` 无指示器 |
+| **普攻 (J / 槽位 0)** | 仍即时施法，不走抬手 |
+
+桌面 DEV：`keydown` 进入瞄准、`keyup` 提交；移动端 SkillHud pointer hold-release 与取消区判定共用。
+
+英雄 `aimKind` 配置见各 `src/game/heroes/*.json`；逻辑入口 `src/game/input/cast-aiming.ts`、`practice-session` 的 `beginAim` / `updateAim` / `commitAim` / `cancelAim`。
+
 ---
 
 ## 8. 文档与仓库约定

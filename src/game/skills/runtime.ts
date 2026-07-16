@@ -113,8 +113,10 @@ export function startSkill(
         // T35.2:进入 active 时回调一次(契约之盾等挂 buff / spawn effect)
         if (skill.onActivate) {
           skill.onActivate({ ...ctx, castSnapshot: snap });
-          // 脱手 effect 技能无 active 伤害 tick,仍需触发命中盒 VFX
-          inst.hitboxActivations += 1;
+          // 脱手 effect 技能由 world effect 驱动 VFX;无 skill.damage 时不闪 cast hit
+          if (skill.damage !== undefined) {
+            inst.hitboxActivations += 1;
+          }
         }
       }
       if (inst.phase === 'active') {

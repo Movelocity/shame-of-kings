@@ -114,6 +114,16 @@ describe('assertFourSkillKit', () => {
     ).toThrow(/hotkey "2"/);
   });
 
+  it('无效 aimKind 抛错', () => {
+    const bad = {
+      ...ARTHUR_DATA,
+      skills: ARTHUR_DATA.skills.map((s) =>
+        s.hotkey === '1' ? { ...s, aimKind: 'invalid' } : s,
+      ),
+    };
+    expect(() => assertFourSkillKit(bad)).toThrow(/invalid aimKind/);
+  });
+
   it('远程普攻 attack-damage 校验 projectileSpeed', () => {
     const stub: HeroKitData = {
       id: 'ranged-aa',

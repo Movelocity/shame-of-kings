@@ -1,5 +1,11 @@
 import type { CastSnapshot, Skill, SkillContext } from '../skills/types';
-import { spawnProjectile, spawnProjectileThenZone, spawnProjectilesFromCast } from '../world/skill-effects/spawn';
+import {
+  spawnProjectile,
+  spawnProjectileThenZone,
+  spawnProjectilesFromCast,
+  spawnSweptRectFromCast,
+} from '../world/skill-effects/spawn';
+import { createSequentialProjectileBurst } from '../world/skill-effects/sequential-projectile-burst';
 import type { WorldStateHandle } from '../world/WorldState';
 import type { HeroSkillEffectData } from './hero-kit';
 
@@ -39,9 +45,34 @@ export function wrapSkillWithEffectSpawn(
           hitPolicy: effect.pierce ? { maxHits: 1, pierce: effect.pierce } : { maxHits: 1 },
           damage: { amount: effect.damage },
         }));
-        for (const entity of spawnProjectilesFromCast(snap, sourceTeam, configs)) {
-          world.spawnEffect(entity);
+        const interval = effect.projectileSpawnInterval ?? 0;
+        if (interval > 0 && count > 1) {
+          world.spawnEffect(
+            createSequentialProjectileBurst({
+              snapshot: snap,
+              sourceTeam,
+              spawnInterval: interval,
+              projectileConfigs: configs,
+            }),
+          );
+        } else {
+          for (const entity of spawnProjectilesFromCast(snap, sourceTeam, configs)) {
+            world.spawnEffect(entity);
+          }
         }
+        return;
+      }
+
+      if (effect.kind === 'spawn-swept-rect') {
+        world.spawnEffect(
+          spawnSweptRectFromCast(snap, sourceTeam, skill.id, {
+            speed: effect.speed,
+            maxRange: effect.maxRange,
+            halfWidth: effect.halfWidth,
+            halfDepth: effect.halfDepth,
+            damage: { amount: effect.damage },
+          }),
+        );
         return;
       }
 

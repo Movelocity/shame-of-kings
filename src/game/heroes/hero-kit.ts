@@ -5,6 +5,10 @@ import type { HitShape, Skill } from '../skills/types';
 export const HERO_HOTKEYS = ['0', '1', '2', '3'] as const;
 export type HeroHotkey = (typeof HERO_HOTKEYS)[number];
 
+/** 瞄准方式:与 castMode 正交,驱动指示器与方向/锁定预览 */
+export type AimKind = 'none' | 'direction' | 'lock-target';
+export const AIM_KINDS: readonly AimKind[] = ['none', 'direction', 'lock-target'];
+
 /** 英雄 JSON 中单个技能槽位(数据层) */
 export interface HeroSkillSlotData {
   id: string;
@@ -17,6 +21,8 @@ export interface HeroSkillSlotData {
   recoveryTime: number;
   cooldown: number;
   castMode?: Skill['castMode'];
+  /** 瞄准方式;缺省 none */
+  aimKind?: AimKind;
   effect: HeroSkillEffectData;
 }
 
@@ -65,6 +71,17 @@ export type HeroSkillEffectData =
       pierce?: number;
       damage: number;
       projectileCount?: number;
+      /** 多枚弹道依次发射间隔(秒);缺省 0 = 同帧齐射 */
+      projectileSpawnInterval?: number;
+    }
+  | {
+      kind: 'spawn-swept-rect';
+      speed: number;
+      maxRange: number;
+      /** 飞行中剑气矩形半宽/半深(与 hit 瞄准预览可不同) */
+      halfWidth: number;
+      halfDepth: number;
+      damage: number;
     }
   | {
       kind: 'projectile-then-zone';
@@ -151,6 +168,12 @@ function assertSkillSlot(heroId: string, value: unknown): asserts value is HeroS
   if (value.castMode !== undefined && value.castMode !== 'instant' && value.castMode !== 'targeted') {
     throw new Error(`hero kit "${heroId}": invalid castMode for skill "${value.id}"`);
   }
+  if (
+    value.aimKind !== undefined &&
+    !AIM_KINDS.includes(value.aimKind as AimKind)
+  ) {
+    throw new Error(`hero kit "${heroId}": invalid aimKind for skill "${value.id}"`);
+  }
   assertEffect(heroId, value.id, value.effect);
 }
 
@@ -176,6 +199,7 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
     ],
     'attack-damage': ['attackRange', 'autoAcquireRangeMultiplier'],
     'spawn-projectile': ['speed', 'maxRange', 'damage'],
+    'spawn-swept-rect': ['speed', 'maxRange', 'halfWidth', 'halfDepth', 'damage'],
     'projectile-then-zone': [
       'projectileSpeed',
       'projectileMaxRange',
@@ -202,6 +226,16 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
     throw new Error(`hero kit "${heroId}": effect.dashSpeed must be positive`);
   }
   if (effect.kind === 'spawn-projectile' && (effect.speed as number) <= 0) {
+    throw new Error(`hero kit "${heroId}": effect.speed must be positive`);
+  }
+  if (
+    effect.kind === 'spawn-projectile' &&
+    effect.projectileSpawnInterval !== undefined &&
+    (effect.projectileSpawnInterval as number) < 0
+  ) {
+    throw new Error(`hero kit "${heroId}": effect.projectileSpawnInterval must be non-negative`);
+  }
+  if (effect.kind === 'spawn-swept-rect' && (effect.speed as number) <= 0) {
     throw new Error(`hero kit "${heroId}": effect.speed must be positive`);
   }
   if (effect.kind === 'projectile-then-zone' && (effect.projectileSpeed as number) <= 0) {

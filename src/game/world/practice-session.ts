@@ -1,5 +1,12 @@
 // 练习场 session:世界生命周期、tick、cast、reset;与 React / Three 解耦
 import type { AutoAttackPriority } from '../../engine/input/desktop-skill-hotkeys';
+import {
+  beginAimingSession,
+  cancelAimingSession,
+  createAimingSession,
+  isAiming,
+  updateAimingSession,
+} from '../input/cast-aiming';
 import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../combat/auto-attack-intent';
 import { clearAllCc, tickAllCc } from '../combat/unit-cc';
 import { createHeroStateStack } from '../buffs/buff-bag';
@@ -7,9 +14,11 @@ import {
   getHeroAutoAttackRanges,
   getHeroJudgementAcquireRange,
   getHeroHpMax,
+  heroAimKindByHotkey,
   heroSkillByHotkey,
   type HeroId,
 } from '../heroes/index';
+import type { AimKind } from '../heroes/hero-kit';
 import { createCastSnapshot } from '../skills/cast-snapshot';
 import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
@@ -65,6 +74,14 @@ export interface PracticeHudButtonState {
   locked: boolean;
 }
 
+export interface AimingPreview {
+  readonly slotHotkey: string;
+  readonly skill: Skill;
+  readonly aimForwardRad: number;
+  readonly previewTargetId: string | null;
+  readonly aimKind: AimKind;
+}
+
 interface ResolvedDashEnhancement {
   distance: number;
   speed: number;
@@ -85,6 +102,11 @@ export interface PracticeSession {
   preTick(input: PracticePreTickInput): PracticePreTickResult;
   postTick(input: PracticePostTickInput): PracticePostTickResult;
   tryCastHotkey(hotkey: string): boolean;
+  beginAim(hotkey: string): boolean;
+  updateAim(moveInput: { x: number; y: number }): void;
+  commitAim(): boolean;
+  cancelAim(): void;
+  getAimingPreview(): AimingPreview | null;
   requestAutoAttack(priority?: AutoAttackPriority): boolean;
   cancelAutoAttack(): void;
   resetWorld(): void;
@@ -105,6 +127,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
 
   let dummyAlive = true;
   let aaIntentOverridesManualMove = false;
+  const aiming = createAimingSession();
 
   const allUnits = (): Unit[] =>
     dummyAlive ? [playerUnit, dummyUnit] : [playerUnit];
@@ -191,6 +214,87 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     return resolved;
   };
 
+  const lockAcquireRange = (skill: Skill, enhancedDash: ResolvedDashEnhancement | null): number => {
+    if (skill.id === 'sacred-judgement') return judgementAcquireRange;
+    if (enhancedDash) return enhancedDash.acquireRange;
+    if (skill.hit.kind === 'target') return skill.hit.range;
+    return 0;
+  };
+
+  const castHotkey = (
+    hotkey: string,
+    aimOverrides?: {
+      aimKind: AimKind;
+      forwardRad: number;
+      targetId: string | null;
+    },
+  ): boolean => {
+    if (hotkey === '0') return false;
+    const baseSkill = heroSkillByHotkey(heroId, hotkey);
+    if (!baseSkill) return false;
+    const enhancedDash = skillDashEnhancement(baseSkill.id);
+    const skill: Skill = enhancedDash
+      ? {
+          ...baseSkill,
+          displacement: 'dash',
+          dashDistance: enhancedDash.distance,
+          dashSpeed: enhancedDash.speed,
+        }
+      : baseSkill;
+
+    let forwardRad = aimOverrides?.forwardRad ?? playerUnit.facingRad;
+    let dashDistance: number | undefined;
+    let targetId: string | undefined;
+
+    if (aimOverrides?.aimKind === 'direction') {
+      forwardRad = aimOverrides.forwardRad;
+    } else if (aimOverrides?.aimKind === 'lock-target') {
+      if (!aimOverrides.targetId) return false;
+      targetId = aimOverrides.targetId;
+      const target = world.getUnit(targetId);
+      if (target) {
+        forwardRad = facingToward(playerUnit.position, target.position);
+      }
+    } else {
+      const enhancementNeedsTarget =
+        enhancedDash?.targeting === 'locked' ||
+        enhancedDash?.targeting === 'locked-or-forward';
+      if (skill.castMode === 'targeted' || enhancementNeedsTarget) {
+        const acquireRange = lockAcquireRange(skill, enhancedDash);
+        const target = findNearestEnemy(world, playerUnit, acquireRange);
+        if (!target && (skill.castMode === 'targeted' || enhancedDash?.targeting === 'locked')) {
+          return false;
+        }
+        if (target) {
+          targetId = target.id;
+          forwardRad = facingToward(playerUnit.position, target.position);
+          const dx = target.position.x - playerUnit.position.x;
+          const dz = target.position.z - playerUnit.position.z;
+          dashDistance = Math.min(skill.dashDistance, Math.hypot(dx, dz));
+        }
+      }
+    }
+
+    const snapshot = createCastSnapshot({
+      casterId: playerUnit.id,
+      skillId: skill.id,
+      origin: playerUnit.position,
+      forwardRad,
+      targetId,
+      dashDistance,
+    });
+    const inst = skillBook.start(skill, playerUnit, snapshot);
+    if (!inst) return false;
+    buffs.consumeSkillEnhancements(skill.id);
+    return true;
+  };
+
+  const resolveLockTarget = (skill: Skill): string | null => {
+    const acquireRange = lockAcquireRange(skill, null);
+    const target = findNearestEnemy(world, playerUnit, acquireRange);
+    return target?.id ?? null;
+  };
+
   return {
     world,
     skillBook,
@@ -214,57 +318,74 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
 
     tryCastHotkey(hotkey) {
       if (hotkey === '0') return this.requestAutoAttack();
-      const baseSkill = heroSkillByHotkey(heroId, hotkey);
-      if (!baseSkill) return false;
-      const enhancedDash = skillDashEnhancement(baseSkill.id);
-      const skill: Skill = enhancedDash
-        ? {
-            ...baseSkill,
-            displacement: 'dash',
-            dashDistance: enhancedDash.distance,
-            dashSpeed: enhancedDash.speed,
-          }
-        : baseSkill;
+      return castHotkey(hotkey);
+    },
 
-      let forwardRad = playerUnit.facingRad;
-      let dashDistance: number | undefined;
-      let targetId: string | undefined;
-      const enhancementNeedsTarget =
-        enhancedDash?.targeting === 'locked' ||
-        enhancedDash?.targeting === 'locked-or-forward';
-      if (skill.castMode === 'targeted' || enhancementNeedsTarget) {
-        const acquireRange = skill.id === 'sacred-judgement'
-          ? judgementAcquireRange
-          : enhancedDash
-            ? enhancedDash.acquireRange
-            : skill.hit.kind === 'target'
-              ? skill.hit.range
-              : 0;
-        const target = findNearestEnemy(world, playerUnit, acquireRange);
-        if (!target && (skill.castMode === 'targeted' || enhancedDash?.targeting === 'locked')) {
-          return false;
-        }
+    beginAim(hotkey) {
+      if (hotkey === '0') return false;
+      if (isAiming(aiming) || skillBook.active !== null) return false;
+      const baseSkill = heroSkillByHotkey(heroId, hotkey);
+      if (!baseSkill || !skillBook.canStart(baseSkill.id)) return false;
+      const aimKind = heroAimKindByHotkey(heroId, hotkey);
+      const initialTargetId =
+        aimKind === 'lock-target' ? resolveLockTarget(baseSkill) : null;
+      beginAimingSession(aiming, {
+        slotHotkey: hotkey,
+        skill: baseSkill,
+        aimKind,
+        initialForwardRad: playerUnit.facingRad,
+        initialTargetId,
+      });
+      aaIntent.cancel();
+      aaIntentOverridesManualMove = false;
+      return true;
+    },
+
+    updateAim(moveInput) {
+      if (!isAiming(aiming) || !aiming.skill) return;
+      const lockTargetId =
+        aiming.aimKind === 'lock-target'
+          ? resolveLockTarget(aiming.skill)
+          : undefined;
+      updateAimingSession(aiming, {
+        moveInput,
+        lockTargetId,
+        fallbackForwardRad: playerUnit.facingRad,
+      });
+      if (aiming.aimKind === 'lock-target' && aiming.previewTargetId) {
+        const target = world.getUnit(aiming.previewTargetId);
         if (target) {
-          targetId = target.id;
-          forwardRad = facingToward(playerUnit.position, target.position);
-          const dx = target.position.x - playerUnit.position.x;
-          const dz = target.position.z - playerUnit.position.z;
-          dashDistance = Math.min(skill.dashDistance, Math.hypot(dx, dz));
+          aiming.aimForwardRad = facingToward(playerUnit.position, target.position);
         }
       }
+      if (aiming.aimKind === 'direction' || aiming.aimKind === 'lock-target') {
+        playerUnit.facingRad = aiming.aimForwardRad;
+      }
+    },
 
-      const snapshot = createCastSnapshot({
-        casterId: playerUnit.id,
-        skillId: skill.id,
-        origin: playerUnit.position,
-        forwardRad,
-        targetId,
-        dashDistance,
-      });
-      const inst = skillBook.start(skill, playerUnit, snapshot);
-      if (!inst) return false;
-      buffs.consumeSkillEnhancements(skill.id);
-      return true;
+    commitAim() {
+      if (!isAiming(aiming) || !aiming.slotHotkey) return false;
+      const hotkey = aiming.slotHotkey;
+      const aimKind = aiming.aimKind;
+      const forwardRad = aiming.aimForwardRad;
+      const targetId = aiming.previewTargetId;
+      cancelAimingSession(aiming);
+      return castHotkey(hotkey, { aimKind, forwardRad, targetId });
+    },
+
+    cancelAim() {
+      cancelAimingSession(aiming);
+    },
+
+    getAimingPreview() {
+      if (!isAiming(aiming) || !aiming.skill || !aiming.slotHotkey) return null;
+      return {
+        slotHotkey: aiming.slotHotkey,
+        skill: aiming.skill,
+        aimForwardRad: aiming.aimForwardRad,
+        previewTargetId: aiming.previewTargetId,
+        aimKind: aiming.aimKind,
+      };
     },
 
     requestAutoAttack(priority: AutoAttackPriority = 'default') {
@@ -314,11 +435,15 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       buffs.clear();
       aaIntent.clear();
       aaIntentOverridesManualMove = false;
+      cancelAimingSession(aiming);
       clearAllCc(allUnits());
     },
 
     preTick({ dt, manualMove, playerX, playerZ }) {
-      if (manualMove && !aaIntentOverridesManualMove) {
+      if (isAiming(aiming)) {
+        aaIntent.cancel();
+        aaIntentOverridesManualMove = false;
+      } else if (manualMove && !aaIntentOverridesManualMove) {
         aaIntent.cancel();
       }
 
@@ -375,6 +500,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       }
 
       const suppressManualMove =
+        isAiming(aiming) ||
         aaIntentOverridesManualMove ||
         skillBook.active?.skill.displacement === 'dash';
 

@@ -13,12 +13,16 @@ import {
 } from 'three';
 import type { HitShape } from '../skills/types';
 import type { Vec2 } from '../skills/vec2';
+import {
+  AIM_HITBOX_PRESET,
+  SKILL_HITBOX_BOUND_PRESET,
+  SKILL_HITBOX_FLASH_PRESET,
+  type VfxColorPreset,
+} from './vfx-presets';
 
 const DEFAULT_LIFE = 0.35;
 const Y = 0.06;
-const COLOR = 0xffc14a;
-const OPACITY = 0.45;
-const BOUND_OPACITY = 0.3;
+const FLASH_PRESET = SKILL_HITBOX_FLASH_PRESET;
 
 interface Flash {
   mesh: Mesh;
@@ -51,15 +55,17 @@ export interface HitboxVfxHandle {
   ): void;
   /** 移除已过期 effect 的绑定几何 */
   pruneBoundEffects(activeIds: ReadonlySet<string>): void;
+  /** 立即移除指定绑定(用于瞄准提交后清预览) */
+  removeBoundEffect(id: string): void;
   update(dt: number): void;
   dispose(): void;
 }
 
-function makeMaterial(): MeshBasicMaterial {
+function makeMaterial(preset: VfxColorPreset): MeshBasicMaterial {
   return new MeshBasicMaterial({
-    color: COLOR,
+    color: preset.color,
     transparent: true,
-    opacity: OPACITY,
+    opacity: preset.opacity,
     depthWrite: false,
     side: DoubleSide,
   });
@@ -71,28 +77,28 @@ function applyPose(mesh: Mesh, origin: Vec2, forwardRad: number): void {
   mesh.rotation.y = -forwardRad;
 }
 
-function buildSelf(): Mesh {
+function buildSelf(preset: VfxColorPreset): Mesh {
   const geo = new RingGeometry(0.35, 0.55, 24);
   geo.rotateX(-Math.PI / 2);
-  return new Mesh(geo, makeMaterial());
+  return new Mesh(geo, makeMaterial(preset));
 }
 
-function buildCircle(radius: number): Mesh {
+function buildCircle(radius: number, preset: VfxColorPreset): Mesh {
   const geo = new CircleGeometry(radius, 32);
   geo.rotateX(-Math.PI / 2);
-  const mat = makeMaterial();
-  mat.opacity = OPACITY * 0.85;
+  const mat = makeMaterial(preset);
+  mat.opacity = preset.opacity * 0.85;
   return new Mesh(geo, mat);
 }
 
-function buildRect(halfWidth: number, halfDepth: number): Mesh {
+function buildRect(halfWidth: number, halfDepth: number, preset: VfxColorPreset): Mesh {
   // 盒子中心放在前方 halfDepth/2,覆盖 localZ ∈ [0, halfDepth]
   const geo = new BoxGeometry(halfWidth * 2, 0.05, halfDepth);
   geo.translate(0, 0, -halfDepth / 2);
-  return new Mesh(geo, makeMaterial());
+  return new Mesh(geo, makeMaterial(preset));
 }
 
-function buildCone(range: number, halfAngleRad: number): Mesh {
+function buildCone(range: number, halfAngleRad: number, preset: VfxColorPreset): Mesh {
   const shape = new Shape();
   shape.moveTo(0, 0);
   const segments = 16;
@@ -107,32 +113,32 @@ function buildCone(range: number, halfAngleRad: number): Mesh {
   geo.rotateX(-Math.PI / 2);
   // Shape 的 +Y 旋到 -Z 后需再绕 Y 转 π? rotateX(-90°) 把 +Y→-Z, +X 仍 +X。
   // facing 0 时期望扇形朝 -Z:当前几何已朝 -Z。OK
-  const mat = makeMaterial();
-  mat.opacity = OPACITY * 0.8;
+  const mat = makeMaterial(preset);
+  mat.opacity = preset.opacity * 0.8;
   return new Mesh(geo, mat);
 }
 
-function buildTarget(range: number): Mesh {
+function buildTarget(range: number, preset: VfxColorPreset): Mesh {
   // 细环示意锁定距离
   const geo = new RingGeometry(Math.max(0.2, range - 0.15), range, 48);
   geo.rotateX(-Math.PI / 2);
-  const mat = makeMaterial();
-  mat.opacity = OPACITY * 0.35;
+  const mat = makeMaterial(preset);
+  mat.opacity = preset.opacity * 0.35;
   return new Mesh(geo, mat);
 }
 
-function buildMesh(shape: HitShape): Mesh {
+function buildMesh(shape: HitShape, preset: VfxColorPreset = FLASH_PRESET): Mesh {
   switch (shape.kind) {
     case 'self':
-      return buildSelf();
+      return buildSelf(preset);
     case 'circle':
-      return buildCircle(shape.radius);
+      return buildCircle(shape.radius, preset);
     case 'rect':
-      return buildRect(shape.halfWidth, shape.halfDepth);
+      return buildRect(shape.halfWidth, shape.halfDepth, preset);
     case 'cone':
-      return buildCone(shape.range, shape.halfAngleRad);
+      return buildCone(shape.range, shape.halfAngleRad, preset);
     case 'target':
-      return buildTarget(shape.range);
+      return buildTarget(shape.range, preset);
   }
 }
 
@@ -181,14 +187,17 @@ export function createHitboxVfx(): HitboxVfxHandle {
   ): void {
     let entry = bound.get(id);
     if (!entry) {
-      const mesh = buildMesh(shape);
+      const preset =
+        id === 'aim-preview' ? AIM_HITBOX_PRESET : SKILL_HITBOX_BOUND_PRESET;
+      const mesh = buildMesh(shape, preset);
       const material = mesh.material as MeshBasicMaterial;
-      material.opacity = BOUND_OPACITY;
       applyPose(mesh, originProvider(), forwardRad);
       group.add(mesh);
       entry = { mesh, material, originProvider, forwardRad };
       bound.set(id, entry);
     }
+    entry.originProvider = originProvider;
+    entry.forwardRad = forwardRad;
     applyPose(entry.mesh, entry.originProvider(), entry.forwardRad);
   }
 
@@ -200,6 +209,15 @@ export function createHitboxVfx(): HitboxVfxHandle {
       entry.material.dispose();
       bound.delete(id);
     }
+  }
+
+  function removeBoundEffect(id: string): void {
+    const entry = bound.get(id);
+    if (!entry) return;
+    group.remove(entry.mesh);
+    entry.mesh.geometry.dispose();
+    entry.material.dispose();
+    bound.delete(id);
   }
 
   function update(dt: number): void {
@@ -219,7 +237,9 @@ export function createHitboxVfx(): HitboxVfxHandle {
       const t = f.age / f.life;
       // 前段保持,后段淡出
       f.material.opacity =
-        t < 0.45 ? OPACITY : Math.max(0, OPACITY * (1 - (t - 0.45) / 0.55));
+        t < 0.45
+          ? FLASH_PRESET.opacity
+          : Math.max(0, FLASH_PRESET.opacity * (1 - (t - 0.45) / 0.55));
     }
 
     for (const entry of bound.values()) {
@@ -242,5 +262,5 @@ export function createHitboxVfx(): HitboxVfxHandle {
     bound.clear();
   }
 
-  return { group, spawn, spawnAttached, bindEffect, pruneBoundEffects, update, dispose };
+  return { group, spawn, spawnAttached, bindEffect, pruneBoundEffects, removeBoundEffect, update, dispose };
 }

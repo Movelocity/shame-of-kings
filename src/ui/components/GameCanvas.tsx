@@ -20,6 +20,7 @@ import { asUnit } from '../../game/units/as-unit';
 import {
   getHeroHpMax,
   getHeroKitSkills,
+  heroAimKindByHotkey,
   heroSkillByHotkey,
   HERO_IDS,
   heroDisplayName,
@@ -34,9 +35,11 @@ import {
   type PracticeSession,
 } from '../../game/world/practice-session';
 import { DamageFloaters } from '../../game/world/DamageFloaters';
-import { createHitboxVfx } from '../../game/world/HitboxVfx';
+import { createHitboxVfx, type HitboxVfxHandle } from '../../game/world/HitboxVfx';
+import { createAimIndicatorVfx, type AimIndicatorVfxHandle } from '../../game/world/AimIndicatorVfx';
 import type { PersistentAreaEffect } from '../../game/world/skill-effects/persistent-area';
 import type { ProjectileEffect } from '../../game/world/skill-effects/projectile';
+import type { SweptRectEffect } from '../../game/world/skill-effects/swept-rect';
 import { createWorldHpBars, FACTION_COLORS } from '../../game/world/WorldHpBars';
 import { SkillHud, type SkillHudHandle } from './SkillHud';
 
@@ -46,6 +49,12 @@ function castModesForHero(heroId: HeroId): Readonly<Record<string, Skill['castMo
   return Object.fromEntries(
     getHeroKitSkills(heroId).map((skill) => [skill.hotkey, skill.castMode ?? 'instant']),
   );
+}
+
+function shouldUseHoldRelease(slotHotkey: string, castMode: Skill['castMode'] | undefined): boolean {
+  if (slotHotkey === '0') return false;
+  if (import.meta.env.DEV) return true;
+  return castMode === 'targeted';
 }
 
 interface GameCanvasProps {
@@ -67,9 +76,15 @@ export function GameCanvas({
   const [heroId, setHeroId] = useState<HeroId>(DEFAULT_HERO);
   const heroIdRef = useRef<HeroId>(DEFAULT_HERO);
   const aimStateRef = useRef<{ slotHotkey: string; skill: Skill } | null>(null);
+  const hitboxVfxRef = useRef<HitboxVfxHandle | null>(null);
+  const aimIndicatorRef = useRef<AimIndicatorVfxHandle | null>(null);
   const setAimState = (next: { slotHotkey: string; skill: Skill } | null): void => {
     aimStateRef.current = next;
     setAiming(next);
+  };
+  const clearAimVisuals = (): void => {
+    hitboxVfxRef.current?.removeBoundEffect('aim-preview');
+    aimIndicatorRef.current?.hide();
   };
 
   const requestAutoAttack = (priority: AutoAttackPriority = 'default'): boolean => {
@@ -83,6 +98,8 @@ export function GameCanvas({
     return session.tryCastHotkey(slotHotkey);
   };
   const cancelAiming = (): void => {
+    sessionRef.current?.cancelAim();
+    clearAimVisuals();
     setAimState(null);
   };
   function isInsideCancelRect(clientX: number, clientY: number): boolean {
@@ -97,13 +114,17 @@ export function GameCanvas({
     );
   }
   const commitAimingFromPointer = (clientX: number, clientY: number, inside: boolean): void => {
+    const session = sessionRef.current;
     const cur = aimStateRef.current;
-    if (!cur) return;
+    if (!session || !cur) return;
     if (!inside || isInsideCancelRect(clientX, clientY)) {
+      session.cancelAim();
+      clearAimVisuals();
       setAimState(null);
       return;
     }
-    tryStartSkillBySlot(cur.slotHotkey);
+    session.commitAim();
+    clearAimVisuals();
     setAimState(null);
   };
   const onSkillPressStart = (slotHotkey: string): void => {
@@ -115,8 +136,10 @@ export function GameCanvas({
     const session = sessionRef.current;
     if (!skill || !session) return;
     if (aimStateRef.current || !session.skillBook.canStart(skill.id)) return;
-    if (skill.castMode === 'targeted') {
-      setAimState({ slotHotkey, skill });
+    if (shouldUseHoldRelease(slotHotkey, skill.castMode)) {
+      if (session.beginAim(slotHotkey)) {
+        setAimState({ slotHotkey, skill });
+      }
     } else {
       tryStartSkillBySlot(slotHotkey);
     }
@@ -210,7 +233,12 @@ export function GameCanvas({
     gameScene.scene.add(floaters.group);
     const hitboxVfx = createHitboxVfx();
     gameScene.scene.add(hitboxVfx.group);
+    hitboxVfxRef.current = hitboxVfx;
+    const aimIndicator = createAimIndicatorVfx();
+    gameScene.scene.add(aimIndicator.group);
+    aimIndicatorRef.current = aimIndicator;
     const shownHitboxActivations = new WeakMap<SkillInstance, number>();
+    const heldDesktopSlots = new Set<string>();
 
     const unsubscribeDamage = session.world.subscribeDamage((results) => {
       for (const r of results) {
@@ -248,6 +276,14 @@ export function GameCanvas({
     canvas.addEventListener('click', onCanvasClick as unknown as EventListener);
 
     function onKeyDown(e: KeyboardEvent): void {
+      if (e.key === 'Escape' && session.getAimingPreview()) {
+        e.preventDefault();
+        session.cancelAim();
+        heldDesktopSlots.clear();
+        clearAimVisuals();
+        setAimState(null);
+        return;
+      }
       const action = resolveDesktopSkillKey(e.key);
       if (!action) return;
       e.preventDefault();
@@ -255,9 +291,30 @@ export function GameCanvas({
         session.requestAutoAttack(action.priority);
         return;
       }
+      const skill = heroSkillByHotkey(heroIdRef.current, action.slotHotkey);
+      if (shouldUseHoldRelease(action.slotHotkey, skill?.castMode)) {
+        if (session.beginAim(action.slotHotkey) && skill) {
+          heldDesktopSlots.add(action.slotHotkey);
+          setAimState({ slotHotkey: action.slotHotkey, skill });
+        }
+        return;
+      }
       session.tryCastHotkey(action.slotHotkey);
     }
+
+    function onKeyUp(e: KeyboardEvent): void {
+      const action = resolveDesktopSkillKey(e.key);
+      if (!action || action.kind !== 'cast') return;
+      if (!heldDesktopSlots.has(action.slotHotkey)) return;
+      heldDesktopSlots.delete(action.slotHotkey);
+      if (session.getAimingPreview()?.slotHotkey === action.slotHotkey) {
+        session.commitAim();
+        clearAimVisuals();
+        setAimState(null);
+      }
+    }
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
 
     const loop = createFixedLoop();
 
@@ -291,7 +348,45 @@ export function GameCanvas({
           gameScene.player.setFacingRad(pre.facingRad);
         }
 
+        const aimPreviewBefore = session.getAimingPreview();
+        if (aimPreviewBefore) {
+          session.updateAim(merged);
+        }
+
         gameScene.update(dt, pre.suppressManualMove ? ZERO_JOYSTICK : merged);
+
+        const aimPreview = session.getAimingPreview();
+        if (aimPreview) {
+          hitboxVfx.bindEffect(
+            'aim-preview',
+            aimPreview.skill.hit,
+            () => playerUnit.position,
+            aimPreview.aimForwardRad,
+          );
+          const aimKind = heroAimKindByHotkey(session.heroId, aimPreview.slotHotkey);
+          if (aimKind !== 'none') {
+            const lockTarget = aimPreview.previewTargetId
+              ? session.world.getUnit(aimPreview.previewTargetId)?.position ?? null
+              : null;
+            const lockRange =
+              aimKind === 'lock-target' && aimPreview.skill.hit.kind === 'target'
+                ? aimPreview.skill.hit.range
+                : undefined;
+            aimIndicator.show({
+              aimKind,
+              forwardRad: aimPreview.aimForwardRad,
+              origin: playerUnit.position,
+              lockTarget,
+              lockRange,
+            });
+          } else {
+            aimIndicator.hide();
+          }
+          gameScene.controller.setFacingRad(aimPreview.aimForwardRad);
+          gameScene.player.setFacingRad(aimPreview.aimForwardRad);
+        } else {
+          aimIndicator.hide();
+        }
 
         const post = session.postTick({
           dt,
@@ -301,7 +396,11 @@ export function GameCanvas({
         });
 
         const activeInst = session.skillBook.active;
-        if (activeInst) {
+        const effectDrivenVfx =
+          activeInst !== null &&
+          activeInst.skill.onActivate !== undefined &&
+          activeInst.skill.damage === undefined;
+        if (activeInst && !effectDrivenVfx) {
           const shown = shownHitboxActivations.get(activeInst) ?? 0;
           for (let i = shown; i < activeInst.hitboxActivations; i++) {
             if (activeInst.skill.hitOrigin === 'cast') {
@@ -322,6 +421,9 @@ export function GameCanvas({
         }
 
         const activeEffectIds = new Set<string>();
+        if (session.getAimingPreview()) {
+          activeEffectIds.add('aim-preview');
+        }
         for (const [effectId, effect] of session.world.effects) {
           activeEffectIds.add(effectId);
           if (effect.kind === 'projectile') {
@@ -337,6 +439,14 @@ export function GameCanvas({
               effectId,
               { kind: 'circle', radius: zone.config.radius },
               () => zone.position,
+            );
+          } else if (effect.kind === 'swept-rect') {
+            const blade = effect as SweptRectEffect;
+            hitboxVfx.bindEffect(
+              effectId,
+              { kind: 'rect', halfWidth: blade.halfWidth, halfDepth: blade.halfDepth },
+              () => blade.getOrigin(),
+              blade.getForwardRad(),
             );
           }
         }
@@ -365,6 +475,7 @@ export function GameCanvas({
 
         floaters.update(dt);
         hitboxVfx.update(dt);
+        aimIndicator.update(dt);
         hpBars.update();
       },
       () => {
@@ -376,6 +487,7 @@ export function GameCanvas({
       loop.stop();
       window.removeEventListener('resize', onResize);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('click', onCanvasClick as unknown as EventListener);
       keyboard.dispose();
       unsubscribeDamage();
@@ -383,6 +495,10 @@ export function GameCanvas({
       gameScene.scene.remove(floaters.group);
       hitboxVfx.dispose();
       gameScene.scene.remove(hitboxVfx.group);
+      hitboxVfxRef.current = null;
+      aimIndicator.dispose();
+      gameScene.scene.remove(aimIndicator.group);
+      aimIndicatorRef.current = null;
       hpBars.dispose();
       gameScene.scene.remove(hpBars.group);
       gameScene.dispose();
@@ -424,6 +540,7 @@ export function GameCanvas({
         onPressEnd={onSkillPressEnd}
         aimingSlotHotkey={aiming?.slotHotkey ?? null}
         castModes={castModesForHero(heroId)}
+        devForceHoldRelease={import.meta.env.DEV}
       />
       {import.meta.env.DEV && (
         <div

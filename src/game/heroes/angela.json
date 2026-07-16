@@ -18,6 +18,7 @@
       "recoveryTime": 0.3,
       "cooldown": 6.0,
       "castMode": "instant",
+      "aimKind": "direction",
       "effect": {
         "kind": "projectile-then-zone",
         "projectileSpeed": 15,
@@ -41,6 +42,7 @@
       "recoveryTime": 0.2,
       "cooldown": 5.0,
       "castMode": "instant",
+      "aimKind": "direction",
       "effect": {
         "kind": "periodic-zone",
         "radius": 0,
@@ -60,6 +62,7 @@
       "recoveryTime": 0.4,
       "cooldown": 12.0,
       "castMode": "instant",
+      "aimKind": "direction",
       "effect": {
         "kind": "periodic-zone",
         "radius": 4,

@@ -65,6 +65,8 @@ export interface SkillHudProps {
   aimingSlotHotkey?: string | null;
   /** T4 KI-4:每个 slot hotkey 的 castMode;缺省全 'instant'(兼容 M3) */
   castModes?: Readonly<Record<string, 'instant' | 'targeted'>>;
+  /** DEV 构建下 hotkey 1–3 强制走 hold-release 样式 */
+  devForceHoldRelease?: boolean;
 }
 
 export interface SkillHudSkillDefinition {
@@ -140,6 +142,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     onPressEnd,
     aimingSlotHotkey = null,
     castModes = DEFAULT_CAST_MODES,
+    devForceHoldRelease = false,
   },
   ref: Ref<SkillHudHandle>,
 ): JSX.Element {
@@ -203,6 +206,10 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     const isLocked = state?.locked ?? false;
     const isReady = cdRemaining <= 0 && !isLocked;
     const castMode = castModes[item.slotHotkey] ?? 'instant';
+    const useHoldRelease =
+      devForceHoldRelease && /^[1-3]$/.test(item.slotHotkey)
+        ? true
+        : castMode === 'targeted';
     const displayHotkey = displayHotkeyForSlot(item.slotHotkey);
     const isCooling = !isReady;
     const cooldownRatio =
@@ -215,7 +222,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
       'skill-orb',
       `skill-orb--${item.kind}`,
       isCooling ? 'is-cooling' : '',
-      castMode === 'targeted' ? 'is-targeted' : '',
+      useHoldRelease ? 'is-targeted' : '',
       aimingSlotHotkey === item.slotHotkey ? 'is-aiming' : '',
     ]
       .filter(Boolean)

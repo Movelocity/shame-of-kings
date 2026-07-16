@@ -15,6 +15,7 @@ import {
   DAJI_DATA,
 } from './daji';
 import type { Skill } from '../skills/types';
+import type { AimKind } from './hero-kit';
 
 export type HeroId = 'arthur' | 'daji' | 'angela';
 
@@ -77,6 +78,7 @@ export function getHeroKitSkills(heroId: HeroId): readonly {
   name: string;
   hotkey: string;
   castMode?: Skill['castMode'];
+  aimKind?: AimKind;
 }[] {
   switch (heroId) {
     case 'arthur':
@@ -86,4 +88,9 @@ export function getHeroKitSkills(heroId: HeroId): readonly {
     case 'angela':
       return ANGELA_DATA.skills;
   }
+}
+
+export function heroAimKindByHotkey(heroId: HeroId, hotkey: string): AimKind {
+  const slot = getHeroKitSkills(heroId).find((s) => s.hotkey === hotkey);
+  return slot?.aimKind ?? 'none';
 }

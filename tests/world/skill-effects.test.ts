@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createCastSnapshot } from '../../src/game/skills/cast-snapshot';
 import { createWorldState } from '../../src/game/world/WorldState';
-import { spawnProjectile, spawnProjectileThenZone } from '../../src/game/world/skill-effects/spawn';
+import { spawnProjectile, spawnProjectileThenZone, spawnSweptRectFromCast } from '../../src/game/world/skill-effects/spawn';
+import { createSequentialProjectileBurst } from '../../src/game/world/skill-effects/sequential-projectile-burst';
 import type { Unit } from '../../src/game/skills/types';
 import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 import { createPracticeDummy, PRACTICE_DUMMY_ID } from '../../src/game/units/practice-dummy';
@@ -115,5 +116,85 @@ describe('daji multi-projectile', () => {
     }
 
     expect(totalHits).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('sequential projectile burst', () => {
+  it('多枚弹道按间隔依次生成', () => {
+    const player = mkPlayer();
+    const world = createWorldState({ units: [player] });
+    const snapshot = createCastSnapshot({
+      casterId: player.id,
+      skillId: 'charm-wave',
+      origin: player.position,
+      forwardRad: 0,
+      targetId: PRACTICE_DUMMY_ID,
+    });
+
+    world.spawnEffect(
+      createSequentialProjectileBurst({
+        snapshot,
+        sourceTeam: 'blue',
+        spawnInterval: 0.1,
+        projectileConfigs: Array.from({ length: 5 }, () => ({
+          skillId: 'charm-wave',
+          speed: 12,
+          maxRange: 10,
+          collisionRadius: 0.22,
+          homing: true,
+          damage: { amount: 40 },
+        })),
+      }),
+    );
+
+    const dt = 1 / 60;
+    const counts: number[] = [];
+    for (let i = 0; i < 40; i++) {
+      world.tickEffects(dt);
+      counts.push([...world.effects.values()].filter((e) => e.kind === 'projectile').length);
+    }
+
+    expect(counts[0]).toBe(1);
+    expect(Math.max(...counts)).toBeGreaterThanOrEqual(2);
+    expect(counts.at(-1)).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('swept-rect blade', () => {
+  it('矩形剑气沿路径命中木人桩', () => {
+    const player = mkPlayer();
+    const dummy = createPracticeDummy();
+    dummy.position = { x: 0, z: 2 };
+    const world = createWorldState({ units: [player, dummy] });
+
+    const snapshot = createCastSnapshot({
+      casterId: player.id,
+      skillId: 'charm-missile',
+      origin: player.position,
+      forwardRad: 0,
+    });
+
+    world.spawnEffect(
+      spawnSweptRectFromCast(snapshot, 'blue', 'charm-missile', {
+        speed: 24,
+        maxRange: 10,
+        halfWidth: 1.2,
+        halfDepth: 0.9,
+        damage: { amount: 180 },
+      }),
+    );
+
+    const dt = 1 / 60;
+    let hit = false;
+    for (let i = 0; i < 120; i++) {
+      const result = world.tickEffects(dt);
+      if (result.damageEvents.some((e) => e.targetId === PRACTICE_DUMMY_ID)) {
+        hit = true;
+        break;
+      }
+    }
+    expect(hit).toBe(true);
+    const blade = [...world.effects.values()].find((e) => e.kind === 'swept-rect');
+    expect(blade).toBeDefined();
   });
 });

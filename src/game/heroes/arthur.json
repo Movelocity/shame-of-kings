@@ -27,6 +27,7 @@
       "recoveryTime": 0.15,
       "cooldown": 6.0,
       "castMode": "instant",
+      "aimKind": "none",
       "effect": {
         "kind": "move-speed-buff",
         "moveSpeedBoost": 0.4,
@@ -47,6 +48,7 @@
       "recoveryTime": 0.3,
       "cooldown": 5.0,
       "castMode": "instant",
+      "aimKind": "none",
       "effect": {
         "kind": "periodic-damage",
         "damage": 45,
@@ -65,6 +67,7 @@
       "recoveryTime": 0.4,
       "cooldown": 8.0,
       "castMode": "targeted",
+      "aimKind": "none",
       "effect": {
         "kind": "dash-landing-knockup",
         "damage": 350,
@@ -85,6 +88,7 @@
       "recoveryTime": 0.15,
       "cooldown": 0.9,
       "castMode": "instant",
+      "aimKind": "none",
       "effect": {
         "kind": "attack-damage",
         "attackRange": 2.0,

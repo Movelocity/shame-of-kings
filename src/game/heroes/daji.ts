@@ -50,7 +50,7 @@ export function loadDajiSkills(): readonly Skill[] {
       });
     }
 
-    if (effect.kind === 'spawn-projectile') {
+    if (effect.kind === 'spawn-projectile' || effect.kind === 'spawn-swept-rect') {
       return wrapSkillWithEffectSpawn(base, effect, 'blue');
     }
 

@@ -27,8 +27,41 @@ describe('daji hero kit', () => {
     const skills = loadDajiSkills();
     expect(skills).toHaveLength(4);
     expect(dajiSkillByHotkey('0')).not.toBeNull();
-    expect(dajiSkillByHotkey('1')?.castMode).toBe('targeted');
+    expect(dajiSkillByHotkey('1')?.castMode).toBe('instant');
     expect(dajiSkillByHotkey('2')?.castMode).toBe('targeted');
+  });
+
+  it('一技能为方向脱手矩形剑气', () => {
+    const s1 = DAJI_DATA.skills.find((s) => s.hotkey === '1');
+    expect(s1?.aimKind).toBe('direction');
+    expect(s1?.hit).toEqual({ kind: 'rect', halfWidth: 1.6, halfDepth: 10 });
+    expect(s1?.effect).toMatchObject({
+      kind: 'spawn-swept-rect',
+      maxRange: 10,
+      halfWidth: 1.2,
+      halfDepth: 0.9,
+    });
+  });
+
+  it('二技能单枚大爱心追踪弹', () => {
+    const s2 = DAJI_DATA.skills.find((s) => s.hotkey === '2');
+    expect(s2?.effect).toMatchObject({
+      kind: 'spawn-projectile',
+      projectileCount: 1,
+      collisionRadius: 0.55,
+      homing: true,
+    });
+  });
+
+  it('三技能五枚小爱心依次飞出', () => {
+    const s3 = DAJI_DATA.skills.find((s) => s.hotkey === '3');
+    expect(s3?.effect).toMatchObject({
+      kind: 'spawn-projectile',
+      projectileCount: 5,
+      collisionRadius: 0.22,
+      projectileSpawnInterval: 0.14,
+      homing: true,
+    });
   });
 
   it('普攻为索敌弹道，攻击距离为近身 2 倍', () => {
