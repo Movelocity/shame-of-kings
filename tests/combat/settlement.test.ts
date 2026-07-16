@@ -36,6 +36,20 @@ describe('combat settlement', () => {
     expect(settleHit(ctx, hit, { baseDamage: 10, ignoreVisibility: true })).toBeNull();
   });
 
+  it('does not apply damage to an already-dead target', () => {
+    const caster = unit('caster', 'blue');
+    const target = unit('target', 'red');
+    target.hp = 0;
+    const world = createWorldState({ units: [caster, target] });
+    const event = settleHit(
+      { caster, world, now: 0, castSnapshot: { castId: 'cast-1', casterId: caster.id, skillId: 'skill', origin: caster.position, forwardRad: 0 } },
+      { target, origin: caster.position, forwardRad: 0 },
+      { baseDamage: 40 },
+    );
+    applyCombatEvents(world, event ? [event] : []);
+    expect(target.hp).toBe(0);
+  });
+
   it('applies knockup through the same event stream', () => {
     const target = unit('target', 'red');
     const world = createWorldState({ units: [target] });

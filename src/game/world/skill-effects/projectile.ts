@@ -19,6 +19,7 @@ export interface ProjectileEffect extends SkillEffectEntity {
   readonly collisionRadius: number;
   readonly spawnZoneOnExpire?: PersistentAreaConfig;
   getPosition(): Vec2;
+  getForwardRad(): number;
 }
 
 export function createProjectileEffect(
@@ -57,6 +58,7 @@ export function createProjectileEffect(
     collisionRadius: config.collision.radius,
     spawnZoneOnExpire: config.spawnZoneOnExpire,
     getPosition: () => ({ ...position }),
+    getForwardRad: () => forwardRad,
     tick(dt, ctx) {
       if (entity.expired) return [];
       const owner = effectOwner(ctx.world, ownerId, sourceTeam, config.origin);

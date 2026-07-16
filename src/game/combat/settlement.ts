@@ -45,6 +45,8 @@ export function applyCombatEvents(
   for (const event of events) {
     const target = world.getUnit(event.targetId);
     if (!target) continue;
+    // 避免对已经死亡的单位继续造成伤害(同一帧内多个来源命中时)
+    if (target.hp <= 0 && event.kind === 'damage') continue;
     if (event.kind === 'damage') {
       target.hp = Math.max(0, target.hp - event.payload.damage);
       damageEvents.push(event);

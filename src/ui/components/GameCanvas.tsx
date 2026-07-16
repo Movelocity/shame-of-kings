@@ -37,6 +37,7 @@ import {
 import { DamageFloaters } from '../../game/world/DamageFloaters';
 import { createHitboxVfx, type HitboxVfxHandle } from '../../game/world/HitboxVfx';
 import { createAimIndicatorVfx, type AimIndicatorVfxHandle } from '../../game/world/AimIndicatorVfx';
+import { createProjectileVfx, type ProjectileVfxHandle } from '../../game/world/projectile-vfx';
 import type { PersistentAreaEffect } from '../../game/world/skill-effects/persistent-area';
 import type { ProjectileEffect } from '../../game/world/skill-effects/projectile';
 import type { SweptRectEffect } from '../../game/world/skill-effects/swept-rect';
@@ -109,6 +110,7 @@ export function GameCanvas({
   const aimStateRef = useRef<{ slotHotkey: string; skill: Skill } | null>(null);
   const hitboxVfxRef = useRef<HitboxVfxHandle | null>(null);
   const aimIndicatorRef = useRef<AimIndicatorVfxHandle | null>(null);
+  const projectileVfxRef = useRef<ProjectileVfxHandle | null>(null);
   /** skill-stick 拖拽状态;active 时瞄准优先用 stick,忽略移动摇杆 */
   const skillStickRef = useRef<{
     active: boolean;
@@ -283,6 +285,8 @@ export function GameCanvas({
     const aimIndicator = createAimIndicatorVfx();
     gameScene.scene.add(aimIndicator.group);
     aimIndicatorRef.current = aimIndicator;
+    const projectileVfx = createProjectileVfx(gameScene.scene);
+    projectileVfxRef.current = projectileVfx;
     const shownHitboxActivations = new WeakMap<SkillInstance, number>();
     const heldDesktopSlots = new Set<string>();
 
@@ -506,11 +510,14 @@ export function GameCanvas({
           activeEffectIds.add(effectId);
           if (effect.kind === 'projectile') {
             const projectile = effect as ProjectileEffect;
-            hitboxVfx.bindEffect(
-              effectId,
-              { kind: 'circle', radius: projectile.collisionRadius },
-              () => projectile.getPosition(),
-            );
+            // 妲己二技能/三技能用爱心 Sprite 替代橙色碰撞圆
+            if (effect.skillId !== 'fox-fire' && effect.skillId !== 'charm-wave') {
+              hitboxVfx.bindEffect(
+                effectId,
+                { kind: 'circle', radius: projectile.collisionRadius },
+                () => projectile.getPosition(),
+              );
+            }
           } else if (effect.kind === 'persistent-area') {
             const zone = effect as PersistentAreaEffect;
             hitboxVfx.bindEffect(
@@ -529,6 +536,7 @@ export function GameCanvas({
           }
         }
         hitboxVfx.pruneBoundEffects(activeEffectIds);
+        projectileVfx.update(session.world.effects, gameScene.follow.camera, heroIdRef.current, dt);
 
         if (post.dummyRingPulse) {
           gameScene.dummy.setRingPulse(1);
@@ -576,6 +584,8 @@ export function GameCanvas({
       aimIndicator.dispose();
       gameScene.scene.remove(aimIndicator.group);
       aimIndicatorRef.current = null;
+      projectileVfx.dispose();
+      projectileVfxRef.current = null;
       hpBars.dispose();
       gameScene.scene.remove(hpBars.group);
       gameScene.dispose();

@@ -540,7 +540,10 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       let clearMoveTarget = manualMove;
 
       if (aaAction.kind === 'engage') {
-        moveTarget = aaAction.moveTo;
+        // 妲己普攻不带动角色自动追击,只原地转向/释放
+        if (heroId !== 'daji') {
+          moveTarget = aaAction.moveTo;
+        }
         facingRad = aaAction.forwardRad;
         playerUnit.facingRad = aaAction.forwardRad;
         clearMoveTarget = false;
