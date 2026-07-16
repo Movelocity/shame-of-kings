@@ -293,11 +293,19 @@ export function GameCanvas({
         if (activeInst) {
           const shown = shownHitboxActivations.get(activeInst) ?? 0;
           for (let i = shown; i < activeInst.hitboxActivations; i++) {
-            hitboxVfx.spawn(
-              activeInst.skill.hit,
-              playerUnit.position,
-              activeInst.forwardRad,
-            );
+            if (activeInst.skill.hitOrigin === 'cast') {
+              hitboxVfx.spawn(
+                activeInst.skill.hit,
+                activeInst.origin,
+                activeInst.forwardRad,
+              );
+            } else {
+              hitboxVfx.spawnAttached(
+                activeInst.skill.hit,
+                () => playerUnit.position,
+                activeInst.forwardRad,
+              );
+            }
           }
           shownHitboxActivations.set(activeInst, activeInst.hitboxActivations);
         }

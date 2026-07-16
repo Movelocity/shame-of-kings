@@ -143,4 +143,22 @@ describe('resolveHits 统一入口', () => {
     expect(resolveHits(world, caster, { kind: 'cone', range: 3, halfAngleRad: Math.PI / 2 }, 0).length).toBe(1);
     expect(resolveHits(world, caster, { kind: 'target', range: 3 }, 0).length).toBe(1);
   });
+
+  it('originOverride 会改变命中盒参考点', () => {
+    const fixedOrigin = { x: 10, z: 0 };
+    const fixedTarget = mkUnit('fixed-target', 11, 0);
+    const movingCaster = mkUnit('caster', 0, 0);
+    const movingWorld = mkWorld([movingCaster, fixedTarget]);
+
+    const hits = resolveHits(
+      movingWorld,
+      movingCaster,
+      { kind: 'circle', radius: 2 },
+      0,
+      fixedOrigin,
+    );
+
+    expect(hits.map((h) => h.target!.id)).toEqual(['fixed-target']);
+    expect(hits[0].origin).toBe(fixedOrigin);
+  });
 });

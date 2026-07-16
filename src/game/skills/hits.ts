@@ -12,26 +12,27 @@ import type { Hit, HitShape, Unit, WorldLike } from './types';
 import type { Vec2 } from './vec2';
 
 /** self: 命中施法者自身(主要给治疗 / 增益类技能用) */
-export function hitSelf(caster: Unit): readonly Hit[] {
-  return [{ target: caster, origin: caster.position, forwardRad: 0 }];
+export function hitSelf(caster: Unit, origin: Vec2 = caster.position): readonly Hit[] {
+  return [{ target: caster, origin, forwardRad: 0 }];
 }
 
-/** circle: 以 caster 为圆心,radius 范围内的所有目标 */
+/** circle: 以 origin 为圆心,radius 范围内的所有目标 */
 export function hitCircle(
   world: WorldLike,
   caster: Unit,
   shape: Extract<HitShape, { kind: 'circle' }>,
+  origin: Vec2 = caster.position,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(caster.position, shape.radius);
+  const candidates = world.unitsNear(origin, shape.radius);
   const hits: Hit[] = [];
   for (const u of candidates) {
     if (u.id === caster.id) continue;
-    const dx = u.position.x - caster.position.x;
-    const dz = u.position.z - caster.position.z;
+    const dx = u.position.x - origin.x;
+    const dz = u.position.z - origin.z;
     if (dx * dx + dz * dz <= shape.radius * shape.radius) {
       hits.push({
         target: u,
-        origin: caster.position,
+        origin,
         forwardRad: 0,
       });
     }
@@ -47,8 +48,9 @@ export function hitRect(
   caster: Unit,
   shape: Extract<HitShape, { kind: 'rect' }>,
   forwardRad: number,
+  origin: Vec2 = caster.position,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(caster.position, shape.halfDepth + shape.halfWidth);
+  const candidates = world.unitsNear(origin, shape.halfDepth + shape.halfWidth);
   // forward 单位向量(f=0 → (0, -1));right 单位向量(f=0 → (-1, 0))
   const fx = Math.sin(forwardRad);
   const fz = -Math.cos(forwardRad);
@@ -57,8 +59,8 @@ export function hitRect(
   const hits: Hit[] = [];
   for (const u of candidates) {
     if (u.id === caster.id) continue;
-    const dx = u.position.x - caster.position.x;
-    const dz = u.position.z - caster.position.z;
+    const dx = u.position.x - origin.x;
+    const dz = u.position.z - origin.z;
     // localZ = 点积(d, forward);localX = 点积(d, right)
     // 矩形是"前方的 AABB",localZ 必须 ≥ 0 才算命中(后方不命中)
     const localZ = dx * fx + dz * fz;
@@ -68,7 +70,7 @@ export function hitRect(
       localZ <= shape.halfDepth &&
       Math.abs(localX) <= shape.halfWidth
     ) {
-      hits.push({ target: u, origin: caster.position, forwardRad });
+      hits.push({ target: u, origin, forwardRad });
     }
   }
   return hits;
@@ -81,8 +83,9 @@ export function hitCone(
   caster: Unit,
   shape: Extract<HitShape, { kind: 'cone' }>,
   forwardRad: number,
+  origin: Vec2 = caster.position,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(caster.position, shape.range);
+  const candidates = world.unitsNear(origin, shape.range);
   const hits: Hit[] = [];
   // Math.cos(π/2) 浮点误差 ≈ 6e-17,会误判"半角 90° 不命中"。
   // 同时 cos(45°) 也有 ~1e-16 误差会让边缘样本漏掉;统一夹 1e-9 容差
@@ -93,14 +96,14 @@ export function hitCone(
   const fz = -Math.cos(forwardRad);
   for (const u of candidates) {
     if (u.id === caster.id) continue;
-    const dx = u.position.x - caster.position.x;
-    const dz = u.position.z - caster.position.z;
+    const dx = u.position.x - origin.x;
+    const dz = u.position.z - origin.z;
     const dist = Math.hypot(dx, dz);
     if (dist > shape.range || dist < 1e-6) continue;
     // 点积(d, forward) / |d| = cosAngle
     const cosAngle = (dx * fx + dz * fz) / dist;
     if (cosAngle >= cosThreshold) {
-      hits.push({ target: u, origin: caster.position, forwardRad });
+      hits.push({ target: u, origin, forwardRad });
     }
   }
   return hits;
@@ -111,20 +114,21 @@ export function hitTarget(
   world: WorldLike,
   caster: Unit,
   shape: Extract<HitShape, { kind: 'target' }>,
+  origin: Vec2 = caster.position,
 ): readonly Hit[] {
-  const candidates = world.unitsNear(caster.position, shape.range);
+  const candidates = world.unitsNear(origin, shape.range);
   let best: { unit: Unit; dist: number } | null = null;
   for (const u of candidates) {
     if (u.id === caster.id) continue;
-    const dx = u.position.x - caster.position.x;
-    const dz = u.position.z - caster.position.z;
+    const dx = u.position.x - origin.x;
+    const dz = u.position.z - origin.z;
     const dist = Math.hypot(dx, dz);
     if (dist > shape.range) continue;
     if (best === null || dist < best.dist) {
       best = { unit: u, dist };
     }
   }
-  return best ? [{ target: best.unit, origin: caster.position, forwardRad: 0 }] : [];
+  return best ? [{ target: best.unit, origin, forwardRad: 0 }] : [];
 }
 
 /** 统一入口:按 HitShape 分派。M2 阶段 T2.4 调试技能和 M3 亚瑟都用它
@@ -135,19 +139,19 @@ export function resolveHits(
   caster: Unit,
   shape: HitShape,
   forwardRad: number,
-  _originOverride?: Vec2,
+  originOverride?: Vec2,
 ): readonly Hit[] {
-  // originOverride 留给 P2 的"施法点偏移"(例如塔从顶部发射);M2 不启用
+  const origin = originOverride ?? caster.position;
   switch (shape.kind) {
     case 'self':
-      return hitSelf(caster);
+      return hitSelf(caster, origin);
     case 'circle':
-      return hitCircle(world, caster, shape);
+      return hitCircle(world, caster, shape, origin);
     case 'rect':
-      return hitRect(world, caster, shape, forwardRad);
+      return hitRect(world, caster, shape, forwardRad, origin);
     case 'cone':
-      return hitCone(world, caster, shape, forwardRad);
+      return hitCone(world, caster, shape, forwardRad, origin);
     case 'target':
-      return hitTarget(world, caster, shape);
+      return hitTarget(world, caster, shape, origin);
   }
 }

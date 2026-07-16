@@ -31,6 +31,12 @@ export type HitShape =
 /** 位移方式(proposal §5.2 锁定,不允许 y±) */
 export type Displacement = 'ground' | 'dash' | 'teleport' | 'none';
 
+/** 命中盒参考点:
+ *  - caster: active 期间跟随施法者当前位置(近身旋风 / 普攻短盒)
+ *  - cast:   固定在施法瞬间原点(脱手 / 地面区域 / 后续投射物落点)
+ */
+export type HitOrigin = 'caster' | 'cast';
+
 export type Team = 'blue' | 'red' | 'neutral';
 
 export interface HiddenState {
@@ -150,6 +156,11 @@ export interface Skill {
   readonly damageInterval?: number;
   /** active 阶段间歇伤害次数;与 damageInterval 成对使用 */
   readonly damageTicks?: number;
+  /**
+   * 命中盒参考点。缺省 'caster',保证近身技能释放后随角色移动。
+   * 脱手技能/固定区域技能应显式设为 'cast' 或后续交给 effect entity。
+   */
+  readonly hitOrigin: HitOrigin;
   /**
    * 进入 active 阶段时回调一次(T35.2:契约之盾挂移速 buff 等)。
    * 纯位移 / 无效果技能可缺省。

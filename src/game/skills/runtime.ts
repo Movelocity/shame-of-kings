@@ -40,7 +40,8 @@ export function startSkill(
   caster: Unit,
   opts: CastOptions,
 ): SkillInstance {
-  const origin = opts.origin ?? caster.position;
+  const castOrigin = opts.origin ?? caster.position;
+  const origin = { x: castOrigin.x, z: castOrigin.z };
   const forward = opts.forwardRad;
   const dashDistanceTotal = opts.dashDistance ?? skill.dashDistance;
   let dashDistanceTravelled = 0;
@@ -128,6 +129,7 @@ export function startSkill(
               caster,
               skill.hit,
               forward,
+              hitOrigin(skill, inst, caster),
             );
             if (skill.damage) {
               for (const h of hits) {
@@ -145,6 +147,7 @@ export function startSkill(
             caster,
             skill.hit,
             forward,
+            hitOrigin(skill, inst, caster),
           );
           const results: DamageResult[] = [];
           for (const h of hits) {
@@ -177,6 +180,10 @@ export function startSkill(
     },
   };
   return inst;
+}
+
+function hitOrigin(skill: Skill, inst: SkillInstance, caster: Unit): Vec2 {
+  return skill.hitOrigin === 'cast' ? inst.origin : caster.position;
 }
 
 function applyDisplacement(
@@ -233,6 +240,7 @@ export function makeSkill(partial: {
   damage?: Skill['damage'];
   damageInterval?: number;
   damageTicks?: number;
+  hitOrigin?: Skill['hitOrigin'];
   /** 缺省 'instant',兼容 M3 现有 4 技能 */
   castMode?: Skill['castMode'];
   onActivate?: Skill['onActivate'];
@@ -252,6 +260,7 @@ export function makeSkill(partial: {
     damage: partial.damage,
     damageInterval: partial.damageInterval,
     damageTicks: partial.damageTicks,
+    hitOrigin: partial.hitOrigin ?? 'caster',
     castMode: partial.castMode ?? 'instant',
     onActivate: partial.onActivate,
     onLand: partial.onLand,

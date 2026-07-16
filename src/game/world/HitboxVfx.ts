@@ -24,12 +24,16 @@ interface Flash {
   material: MeshBasicMaterial;
   age: number;
   life: number;
+  originProvider?: () => Vec2;
+  forwardRad: number;
 }
 
 export interface HitboxVfxHandle {
   readonly group: Group;
   /** 在 origin 处以 forwardRad 朝向画一次命中盒 */
   spawn(shape: HitShape, origin: Vec2, forwardRad: number): void;
+  /** 在短暂显示期间持续贴住 originProvider 返回的位置 */
+  spawnAttached(shape: HitShape, originProvider: () => Vec2, forwardRad: number): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -129,6 +133,25 @@ export function createHitboxVfx(): HitboxVfxHandle {
       material: mesh.material as MeshBasicMaterial,
       age: 0,
       life: DEFAULT_LIFE,
+      forwardRad,
+    });
+  }
+
+  function spawnAttached(
+    shape: HitShape,
+    originProvider: () => Vec2,
+    forwardRad: number,
+  ): void {
+    const mesh = buildMesh(shape);
+    applyPose(mesh, originProvider(), forwardRad);
+    group.add(mesh);
+    flashes.push({
+      mesh,
+      material: mesh.material as MeshBasicMaterial,
+      age: 0,
+      life: DEFAULT_LIFE,
+      originProvider,
+      forwardRad,
     });
   }
 
@@ -142,6 +165,9 @@ export function createHitboxVfx(): HitboxVfxHandle {
         f.material.dispose();
         flashes.splice(i, 1);
         continue;
+      }
+      if (f.originProvider) {
+        applyPose(f.mesh, f.originProvider(), f.forwardRad);
       }
       const t = f.age / f.life;
       // 前段保持,后段淡出
@@ -159,5 +185,5 @@ export function createHitboxVfx(): HitboxVfxHandle {
     flashes.length = 0;
   }
 
-  return { group, spawn, update, dispose };
+  return { group, spawn, spawnAttached, update, dispose };
 }
