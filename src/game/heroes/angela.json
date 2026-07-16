@@ -72,7 +72,7 @@
       "id": "auto-attack",
       "name": "普攻",
       "hotkey": "0",
-      "hit": { "kind": "rect", "halfWidth": 0.5, "halfDepth": 2.0 },
+      "hit": { "kind": "target", "range": 4 },
       "displacement": "none",
       "castTime": 0.0,
       "activeTime": 0.1,
@@ -82,7 +82,12 @@
       "effect": {
         "kind": "attack-damage",
         "attackRange": 2.0,
-        "autoAcquireRangeMultiplier": 1.3
+        "autoAcquireRangeMultiplier": 1.3,
+        "projectileSpeed": 12,
+        "projectileRangeMultiplier": 2,
+        "homing": true,
+        "onTargetLost": "continue-forward",
+        "projectileCollisionRadius": 0.3
       }
     }
   ]

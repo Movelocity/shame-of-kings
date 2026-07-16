@@ -113,4 +113,33 @@ describe('assertFourSkillKit', () => {
       assertFourSkillKit({ ...ARTHUR_DATA, skills: dup }),
     ).toThrow(/hotkey "2"/);
   });
+
+  it('远程普攻 attack-damage 校验 projectileSpeed', () => {
+    const stub: HeroKitData = {
+      id: 'ranged-aa',
+      displayName: 'Ranged',
+      skills: [
+        {
+          id: 'aa',
+          name: 'AA',
+          hotkey: '0',
+          hit: { kind: 'target', range: 4 },
+          displacement: 'none',
+          castTime: 0,
+          activeTime: 0.1,
+          recoveryTime: 0.1,
+          cooldown: 1,
+          effect: {
+            kind: 'attack-damage',
+            attackRange: 2,
+            autoAcquireRangeMultiplier: 1.3,
+            projectileSpeed: 0,
+            projectileRangeMultiplier: 2,
+          },
+        },
+        ...ARTHUR_DATA.skills.filter((s) => s.hotkey !== '0'),
+      ],
+    };
+    expect(() => assertFourSkillKit(stub)).toThrow(/projectileSpeed must be positive/);
+  });
 });

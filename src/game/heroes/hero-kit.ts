@@ -48,6 +48,12 @@ export type HeroSkillEffectData =
       kind: 'attack-damage';
       attackRange: number;
       autoAcquireRangeMultiplier: number;
+      /** 远程普攻：索敌追踪弹道；maxRange = attackRange × projectileRangeMultiplier */
+      projectileSpeed?: number;
+      projectileRangeMultiplier?: number;
+      homing?: boolean;
+      onTargetLost?: 'expire' | 'continue-forward' | 'retarget';
+      projectileCollisionRadius?: number;
     }
   | {
       kind: 'spawn-projectile';
@@ -84,6 +90,23 @@ export interface HeroKitData {
   id: string;
   displayName: string;
   skills: HeroSkillSlotData[];
+}
+
+/** 普攻索敌/出手距离；含远程弹道时 attackRange 为飞行最大距离 */
+export function resolveAutoAttackRanges(
+  effect: HeroSkillEffectData,
+): { attackRange: number; acquireRange: number } | null {
+  if (effect.kind !== 'attack-damage') return null;
+  const mult = effect.projectileRangeMultiplier ?? 1;
+  const attackRange = effect.attackRange * mult;
+  return {
+    attackRange,
+    acquireRange: attackRange * effect.autoAcquireRangeMultiplier,
+  };
+}
+
+export function isProjectileAutoAttack(effect: HeroSkillEffectData): boolean {
+  return effect.kind === 'attack-damage' && effect.projectileSpeed !== undefined;
 }
 
 /**
@@ -183,6 +206,15 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
   }
   if (effect.kind === 'projectile-then-zone' && (effect.projectileSpeed as number) <= 0) {
     throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
+  }
+  if (effect.kind === 'attack-damage' && effect.projectileSpeed !== undefined) {
+    if ((effect.projectileSpeed as number) <= 0) {
+      throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
+    }
+    const mult = effect.projectileRangeMultiplier as number | undefined;
+    if (mult !== undefined && mult < 1) {
+      throw new Error(`hero kit "${heroId}": effect.projectileRangeMultiplier must be >= 1`);
+    }
   }
 }
 

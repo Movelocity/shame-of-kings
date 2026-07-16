@@ -1,5 +1,5 @@
 import type { CastSnapshot, Skill, SkillContext } from '../skills/types';
-import { spawnProjectileThenZone, spawnProjectilesFromCast } from '../world/skill-effects/spawn';
+import { spawnProjectile, spawnProjectileThenZone, spawnProjectilesFromCast } from '../world/skill-effects/spawn';
 import type { WorldStateHandle } from '../world/WorldState';
 import type { HeroSkillEffectData } from './hero-kit';
 
@@ -68,6 +68,43 @@ export function wrapSkillWithEffectSpawn(
         });
         world.spawnEffect(entity);
       }
+    },
+  };
+}
+
+/** 远程普攻：onActivate 生成索敌弹道，伤害在命中帧结算 */
+export function wrapProjectileAutoAttack(
+  skill: Skill,
+  effect: Extract<HeroSkillEffectData, { kind: 'attack-damage' }>,
+  damage: number,
+  sourceTeam: import('../skills/types').Team,
+): Skill {
+  const rangeMult = effect.projectileRangeMultiplier ?? 2;
+  const maxRange = effect.attackRange * rangeMult;
+  return {
+    ...skill,
+    damage: undefined,
+    onActivate(ctx) {
+      skill.onActivate?.(ctx);
+      const snap = getSnapshot(ctx);
+      const world = ctx.world as WorldStateHandle;
+      world.spawnEffect(
+        spawnProjectile({
+          ownerId: snap.casterId,
+          sourceTeam,
+          skillId: skill.id,
+          origin: snap.origin,
+          forwardRad: snap.forwardRad,
+          speed: effect.projectileSpeed!,
+          maxRange,
+          collisionRadius: effect.projectileCollisionRadius,
+          homing: effect.homing ?? true,
+          onTargetLost: effect.onTargetLost ?? 'continue-forward',
+          targetId: snap.targetId,
+          damage: { amount: damage, scalesWithAttackPower: true },
+          hitPolicy: { maxHits: 1 },
+        }),
+      );
     },
   };
 }

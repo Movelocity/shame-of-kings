@@ -1,9 +1,11 @@
 import dajiJson from './daji.json' with { type: 'json' };
 import { makeSkill, simpleDamage } from '../skills/runtime';
 import type { Skill } from '../skills/types';
-import { wrapSkillWithEffectSpawn } from './effect-loader';
+import { wrapProjectileAutoAttack, wrapSkillWithEffectSpawn } from './effect-loader';
 import {
   assertFourSkillKit,
+  isProjectileAutoAttack,
+  resolveAutoAttackRanges,
   type HeroKitData,
   type HeroSkillSlotData,
 } from './hero-kit';
@@ -32,6 +34,9 @@ export function loadDajiSkills(): readonly Skill[] {
     });
 
     if (effect.kind === 'attack-damage') {
+      if (isProjectileAutoAttack(effect)) {
+        return wrapProjectileAutoAttack(base, effect, data.stats.attackDamage, 'blue');
+      }
       return makeSkill({
         ...base,
         damage: simpleDamage(data.stats.attackDamage),
@@ -67,16 +72,11 @@ export function getDajiAutoAttackRanges(): {
   acquireRange: number;
 } {
   const aa = data.skills.find((s) => s.id === DAJI_AUTO_ATTACK_ID);
-  const attackRange =
-    aa?.effect.kind === 'attack-damage' ? aa.effect.attackRange : 2;
-  return {
-    attackRange,
-    acquireRange:
-      attackRange *
-      (aa?.effect.kind === 'attack-damage'
-        ? aa.effect.autoAcquireRangeMultiplier
-        : 1.3),
-  };
+  if (aa?.effect.kind === 'attack-damage') {
+    const ranges = resolveAutoAttackRanges(aa.effect);
+    if (ranges) return ranges;
+  }
+  return { attackRange: 2, acquireRange: 2.6 };
 }
 
 export type { HeroKitData, HeroSkillSlotData };

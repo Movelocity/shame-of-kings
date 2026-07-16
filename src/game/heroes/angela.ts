@@ -3,9 +3,11 @@ import { makeSkill, simpleDamage } from '../skills/runtime';
 import type { Skill } from '../skills/types';
 import { spawnPeriodicZone } from '../world/skill-effects/spawn';
 import type { WorldStateHandle } from '../world/WorldState';
-import { wrapSkillWithEffectSpawn } from './effect-loader';
+import { wrapProjectileAutoAttack, wrapSkillWithEffectSpawn } from './effect-loader';
 import {
   assertFourSkillKit,
+  isProjectileAutoAttack,
+  resolveAutoAttackRanges,
   type HeroKitData,
   type HeroSkillSlotData,
 } from './hero-kit';
@@ -34,6 +36,9 @@ export function loadAngelaSkills(): readonly Skill[] {
     });
 
     if (effect.kind === 'attack-damage') {
+      if (isProjectileAutoAttack(effect)) {
+        return wrapProjectileAutoAttack(base, effect, data.stats.attackDamage, 'blue');
+      }
       return makeSkill({
         ...base,
         damage: simpleDamage(data.stats.attackDamage),
@@ -92,16 +97,11 @@ export function getAngelaAutoAttackRanges(): {
   acquireRange: number;
 } {
   const aa = data.skills.find((s) => s.id === ANGELA_AUTO_ATTACK_ID);
-  const attackRange =
-    aa?.effect.kind === 'attack-damage' ? aa.effect.attackRange : 2;
-  return {
-    attackRange,
-    acquireRange:
-      attackRange *
-      (aa?.effect.kind === 'attack-damage'
-        ? aa.effect.autoAcquireRangeMultiplier
-        : 1.3),
-  };
+  if (aa?.effect.kind === 'attack-damage') {
+    const ranges = resolveAutoAttackRanges(aa.effect);
+    if (ranges) return ranges;
+  }
+  return { attackRange: 2, acquireRange: 2.6 };
 }
 
 export type { HeroKitData, HeroSkillSlotData };

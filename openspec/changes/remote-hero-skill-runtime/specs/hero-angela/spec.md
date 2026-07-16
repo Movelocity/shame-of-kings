@@ -24,3 +24,10 @@
 #### Scenario: Beam not in acceptance checklist
 - **WHEN** 审查本 change 的 DoD
 - **THEN** 光束机制列为后续 delta，不阻塞大火球与区域验收
+
+### Requirement: Angela ranged homing auto-attack
+安琪拉普攻 MUST 与妲己同为索敌追踪弹道；近身基准 `attackRange` 2，有效距离 4；`CastSnapshot.targetId` 与 `auto-attack-intent` 行为一致。
+
+#### Scenario: Angela AA projectile range
+- **WHEN** 读取 `getAngelaAutoAttackRanges()`
+- **THEN** `attackRange` 为 4

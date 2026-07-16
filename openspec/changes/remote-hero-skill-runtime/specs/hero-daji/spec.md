@@ -24,3 +24,14 @@
 #### Scenario: Damage floater on hit frame
 - **WHEN** 追踪弹道命中木人桩
 - **THEN** 该帧产生 `DamageResult` 与飘字反馈
+
+### Requirement: Daji ranged homing auto-attack
+妲己普攻 MUST 为索敌追踪 `ProjectileEffect`；近身基准 `attackRange` 为 2，有效出手/索敌距离 MUST 为 `attackRange × projectileRangeMultiplier`（默认 2，即 4）。`auto-attack-intent` 使用解析后的有效距离；出手时 `CastSnapshot.targetId` 传入已锁目标。
+
+#### Scenario: AA spawns homing projectile at locked target
+- **WHEN** 玩家在普攻获取范围内锁敌并出手
+- **THEN** `onActivate` spawn 追踪弹道，`skillId` 为 `auto-attack`，伤害在命中帧结算
+
+#### Scenario: AA effective range is double melee
+- **WHEN** 读取 `getDajiAutoAttackRanges()`
+- **THEN** `attackRange` 为 4，`acquireRange` 为 5.2（×1.3）

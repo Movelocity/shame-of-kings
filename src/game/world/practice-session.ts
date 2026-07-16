@@ -130,6 +130,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const startAutoAttack = (
     forwardRad: number,
     dash: { distance: number; speed: number } | null,
+    targetId?: string | null,
   ): boolean => {
     const base = heroSkillByHotkey(heroId, '0');
     if (!base) return false;
@@ -146,6 +147,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       skillId: skill.id,
       origin: playerUnit.position,
       forwardRad,
+      targetId: targetId ?? undefined,
     });
     const started = skillBook.start(skill, playerUnit, snapshot);
     if (!started) return false;
@@ -286,7 +288,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         return startAutoAttack(playerUnit.facingRad, {
           distance: forwardDash.distance,
           speed: forwardDash.speed,
-        });
+        }, aaIntent.targetId);
       }
       if (aaIntent.requestAttack(playerUnit, world, aaRanges.acquireRange, priority)) {
         aaIntentOverridesManualMove = false;
@@ -366,7 +368,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
                 speed: empoweredDash.speed,
               }
             : null;
-          startAutoAttack(aaAction.forwardRad, dash);
+          startAutoAttack(aaAction.forwardRad, dash, aaAction.targetId);
         }
       } else {
         aaIntentOverridesManualMove = false;
