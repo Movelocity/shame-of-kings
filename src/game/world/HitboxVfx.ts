@@ -91,6 +91,23 @@ function buildCircle(radius: number, preset: VfxColorPreset): Mesh {
   return new Mesh(geo, mat);
 }
 
+/** aim-preview 的 circle 只保留外圈细环,内圈不填色 */
+function buildAimPreviewCircle(radius: number, preset: VfxColorPreset): Mesh {
+  const thickness = Math.min(0.1, radius * 0.04);
+  const geo = new RingGeometry(Math.max(0.05, radius - thickness), radius, 48);
+  geo.rotateX(-Math.PI / 2);
+  const mat = makeMaterial(preset);
+  mat.opacity = preset.opacity * 1.1;
+  return new Mesh(geo, mat);
+}
+
+function buildAimPreviewMesh(shape: HitGeometry, preset: VfxColorPreset): Mesh {
+  if (shape.kind === 'circle') {
+    return buildAimPreviewCircle(shape.radius, preset);
+  }
+  return buildMesh(shape, preset);
+}
+
 function buildRect(halfWidth: number, halfDepth: number, preset: VfxColorPreset): Mesh {
   // 盒子中心放在前方 halfDepth/2,覆盖 localZ ∈ [0, halfDepth]
   const geo = new BoxGeometry(halfWidth * 2, 0.05, halfDepth);
@@ -189,7 +206,10 @@ export function createHitboxVfx(): HitboxVfxHandle {
     if (!entry) {
       const preset =
         id === 'aim-preview' ? AIM_HITBOX_PRESET : SKILL_HITBOX_BOUND_PRESET;
-      const mesh = buildMesh(shape, preset);
+      const mesh =
+        id === 'aim-preview'
+          ? buildAimPreviewMesh(shape, preset)
+          : buildMesh(shape, preset);
       const material = mesh.material as MeshBasicMaterial;
       applyPose(mesh, originProvider(), forwardRad);
       group.add(mesh);
