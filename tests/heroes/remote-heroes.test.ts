@@ -16,6 +16,7 @@ function makePlayer(spawn = { x: 0, z: 0 }): Unit {
     hp: DAJI_DATA.stats.hpMax,
     hpMax: DAJI_DATA.stats.hpMax,
     isStatic: false,
+    targetable: true,
     collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set<string>() },
@@ -34,7 +35,7 @@ describe('daji hero kit', () => {
   it('一技能为方向脱手矩形剑气', () => {
     const s1 = DAJI_DATA.skills.find((s) => s.hotkey === '1');
     expect(s1?.aimKind).toBe('direction');
-    expect(s1?.hit).toEqual({ kind: 'rect', halfWidth: 1.6, halfDepth: 10 });
+    expect(s1?.aim?.preview).toEqual({ kind: 'rect', halfWidth: 1.6, halfDepth: 10 });
     expect(s1?.effect).toMatchObject({
       kind: 'spawn-swept-rect',
       maxRange: 5,
@@ -66,8 +67,7 @@ describe('daji hero kit', () => {
 
   it('普攻为索敌弹道，攻击距离为近身 2 倍', () => {
     const aa = dajiSkillByHotkey('0');
-    expect(aa?.hit).toEqual({ kind: 'target', range: 4 });
-    expect(aa?.damage).toBeUndefined();
+    expect(aa?.delivery.mode).toBe('spawn-effect');
     const ranges = getDajiAutoAttackRanges();
     expect(ranges.attackRange).toBe(4);
     expect(ranges.acquireRange).toBeCloseTo(4 * 1.3, 5);
@@ -83,11 +83,17 @@ describe('angela hero kit', () => {
 
   it('普攻为索敌弹道，攻击距离为近身 2 倍', () => {
     const aa = angelaSkillByHotkey('0');
-    expect(aa?.hit).toEqual({ kind: 'target', range: 4 });
-    expect(aa?.damage).toBeUndefined();
+    expect(aa?.delivery.mode).toBe('spawn-effect');
     const ranges = getAngelaAutoAttackRanges();
     expect(ranges.attackRange).toBe(4);
     expect(ranges.acquireRange).toBeCloseTo(4 * 1.3, 5);
+  });
+
+  it('三技能为跟随施法者的 interval-hit beam', () => {
+    expect(angelaSkillByHotkey('3')?.delivery).toMatchObject({
+      mode: 'interval-hit',
+      hitOrigin: 'caster',
+    });
   });
 });
 

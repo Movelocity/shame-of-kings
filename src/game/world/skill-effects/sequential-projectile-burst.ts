@@ -42,6 +42,7 @@ export function createSequentialProjectileBurst(
 
   const entity: SequentialProjectileBurstEffect = {
     id,
+    castId: config.snapshot.castId,
     ownerId: config.snapshot.casterId,
     sourceTeam: config.sourceTeam,
     skillId: config.projectileConfigs[0]?.skillId ?? 'unknown',

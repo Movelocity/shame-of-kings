@@ -11,6 +11,7 @@ import {
 import { aimForwardFromInput } from '../input/aim-forward';
 import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../combat/auto-attack-intent';
 import { clearAllCc, tickAllCc } from '../combat/unit-cc';
+import { applyCombatEvents } from '../combat/settlement';
 import { createHeroStateStack } from '../buffs/buff-bag';
 import {
   getHeroAutoAttackRanges,
@@ -22,15 +23,14 @@ import {
 } from '../heroes/index';
 import type { AimKind } from '../heroes/hero-kit';
 import { createCastSnapshot } from '../skills/cast-snapshot';
-import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
-import type { DamageResult, Skill, SkillInstance, Unit } from '../skills/types';
+import type { CombatEvent, Skill, SkillInstance, Unit } from '../skills/types';
 import type { Vec2 } from '../skills/vec2';
 import {
   createPracticeDummy,
   PRACTICE_DUMMY_REGEN_PER_SEC,
 } from '../units/practice-dummy';
-import { createWorldState, effectEventsToDamageResults, type WorldStateHandle } from './WorldState';
+import { createWorldState, type WorldStateHandle } from './WorldState';
 
 export interface PracticeSessionInit {
   playerUnit: Unit;
@@ -123,6 +123,7 @@ export interface PracticeSession {
 
 export function createPracticeSession(init: PracticeSessionInit): PracticeSession {
   const playerUnit = init.playerUnit;
+  const playerSpawn = { ...playerUnit.position };
   const dummyUnit = init.dummyUnit ?? createPracticeDummy();
   const world = createWorldState({ units: [playerUnit, dummyUnit] });
   const skillBook = createSkillBook();
@@ -225,7 +226,13 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
   const lockAcquireRange = (skill: Skill, enhancedDash: ResolvedDashEnhancement | null): number => {
     if (skill.id === 'sacred-judgement') return judgementAcquireRange;
     if (enhancedDash) return enhancedDash.acquireRange;
-    if (skill.hit.kind === 'target') return skill.hit.range;
+    if (skill.aim?.maxRange !== undefined) return skill.aim.maxRange;
+    const delivery = skill.delivery.mode === 'composite'
+      ? skill.delivery.parts.find((part) => part.mode === 'instant-hit' || part.mode === 'interval-hit')
+      : skill.delivery;
+    if (delivery && (delivery.mode === 'instant-hit' || delivery.mode === 'interval-hit') && delivery.geometry.kind === 'target') {
+      return delivery.geometry.range;
+    }
     return 0;
   };
 
@@ -485,6 +492,9 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         dummyAlive = true;
       }
       dummyUnit.hp = dummyUnit.hpMax;
+      playerUnit.position = { ...playerSpawn };
+      playerUnit.hp = playerUnit.hpMax;
+      playerUnit.cc = undefined;
       skillBook.reset();
       world.clearEffects();
       buffs.clear();
@@ -587,43 +597,33 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       let dummyRemoved = false;
       let dashSync: { x: number; z: number } | null = null;
 
-      const applyFrameDamage = (inst: SkillInstance): void => {
-        const results = inst.damage;
-        if (results.length === 0) return;
-        const targets = dummyAlive ? [dummyUnit, playerUnit] : [playerUnit];
-        applyDamage(targets, results);
-        world.notifyDamage(results);
-        dummyRingPulse = true;
-        if (removeDeadDummy()) dummyRemoved = true;
-        (inst as SkillInstance & { damage: DamageResult[] }).damage = [];
-      };
-
       const activeInst = skillBook.active;
       if (activeInst) {
-        applyFrameDamage(activeInst);
         if (activeInst.skill.displacement === 'dash') {
           dashSync = { x: playerUnit.position.x, z: playerUnit.position.z };
         }
       }
 
       for (const completed of completedSkills) {
-        if (completed !== activeInst) {
-          applyFrameDamage(completed);
-        }
         if (completed.skill.displacement === 'dash') {
           dashSync = { x: playerUnit.position.x, z: playerUnit.position.z };
         }
       }
 
-      const effectResult = world.tickEffects(dt);
-      if (effectResult.damageEvents.length > 0) {
-        const effectDamage = effectEventsToDamageResults(effectResult.damageEvents);
-        const targets = dummyAlive ? [dummyUnit, playerUnit] : [playerUnit];
-        applyDamage(targets, effectDamage);
-        world.notifyDamage(effectDamage);
-        dummyRingPulse = true;
-        if (removeDeadDummy()) dummyRemoved = true;
+      const skillInstances = new Set<SkillInstance>(completedSkills);
+      if (activeInst) skillInstances.add(activeInst);
+      const skillEvents: CombatEvent[] = [];
+      for (const instance of skillInstances) {
+        skillEvents.push(...instance.events);
+        instance.events = [];
       }
+      const effectEvents = world.tickEffects(dt);
+      const frameEvents = [...skillEvents, ...effectEvents];
+      applyCombatEvents(world, frameEvents);
+      dummyRingPulse = frameEvents.some(
+        (event) => event.kind === 'damage' && event.targetId === dummyUnit.id,
+      );
+      if (removeDeadDummy()) dummyRemoved = true;
 
       tickDummyRegen(dt);
       if (removeDeadDummy()) dummyRemoved = true;

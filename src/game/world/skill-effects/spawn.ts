@@ -25,6 +25,7 @@ export interface SpawnProjectileParams {
   hitPolicy?: HitPolicy;
   damage: DamageSnapshot;
   targetId?: string;
+  castId?: string;
   spawnZoneOnExpire?: PersistentAreaConfig;
 }
 
@@ -34,7 +35,7 @@ export function spawnProjectile(params: SpawnProjectileParams): SkillEffectEntit
     forwardRad: params.forwardRad,
     speed: params.speed,
     maxRange: params.maxRange,
-    collisionRadius: params.collisionRadius ?? 0.3,
+    collision: { kind: 'circle', radius: params.collisionRadius ?? 0.3 },
     homing: params.homing,
     onTargetLost: params.onTargetLost,
     hitPolicy: params.hitPolicy,
@@ -48,10 +49,12 @@ export function spawnProjectile(params: SpawnProjectileParams): SkillEffectEntit
     params.sourceTeam,
     params.skillId,
     config,
+    params.castId,
   );
 }
 
 export interface ProjectileThenZoneParams {
+  castId?: string;
   ownerId: string;
   sourceTeam: Team;
   skillId: string;
@@ -70,6 +73,7 @@ export interface ProjectileThenZoneParams {
 export function spawnProjectileThenZone(params: ProjectileThenZoneParams): SkillEffectEntity {
   return spawnProjectile({
     ownerId: params.ownerId,
+    castId: params.castId,
     sourceTeam: params.sourceTeam,
     skillId: params.skillId,
     origin: params.origin,
@@ -89,8 +93,9 @@ export function spawnPeriodicZone(
   skillId: string,
   position: Vec2,
   config: PersistentAreaConfig,
+  castId?: string,
 ): SkillEffectEntity {
-  return createPersistentAreaEffect(ownerId, sourceTeam, skillId, position, config);
+  return createPersistentAreaEffect(ownerId, sourceTeam, skillId, position, config, castId);
 }
 
 /** 从 CastSnapshot 构建多枚弹道 */
@@ -110,6 +115,7 @@ export function spawnProjectilesFromCast(
       origin: snapshot.origin,
       forwardRad: snapshot.forwardRad,
       targetId: snapshot.targetId,
+      castId: snapshot.castId,
     }),
   );
 }
@@ -130,12 +136,15 @@ export function spawnSweptRectFromCast(
   return createSweptRectEffect(snapshot.casterId, sourceTeam, skillId, {
     speed: params.speed,
     maxRange: params.maxRange,
-    halfWidth: params.halfWidth,
-    halfDepth: params.halfDepth,
+    collision: {
+      kind: 'rect',
+      halfWidth: params.halfWidth,
+      halfDepth: params.halfDepth,
+    },
     damage: params.damage,
     origin: snapshot.origin,
     forwardRad: snapshot.forwardRad,
-  });
+  }, snapshot.castId);
 }
 
 /** 弹道过期时若配置了 zone,在撞击点生成持续区域 */
@@ -153,6 +162,7 @@ export function spawnZoneIfProjectileExpired(
       effect.skillId,
       proj.getPosition(),
       proj.spawnZoneOnExpire,
+      effect.castId,
     ),
   );
 }

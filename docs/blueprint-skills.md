@@ -1,6 +1,6 @@
 # 技能系统 Blueprint（完整版）
 
-> **状态**：重构目标架构（2026-07-16）  
+> **状态**：已实施（2026-07-16，`blueprint-skills-refactor`）
 > **取代**：[`blueprint-skills-caster.md`](./blueprint-skills-caster.md) 中的增量笔记与问题清单  
 > **读者**：后续重构 agent / 实现者；与 [`DEV.md`](./DEV.md) 里程碑对齐
 
@@ -25,7 +25,7 @@ Settlement         统一伤害/CC/Buff 结算（含视野）
 
 **硬规则**：
 
-1. 脱手实体 **不得** 实现为 `Unit`，**不得** 把 `projectile` 塞进 `HitShape`。
+1. 脱手实体 **不得** 实现为 `Unit`，**不得** 把 `projectile` 塞进 `HitGeometry`。
 2. `HitGeometry` 只做几何；移动、寿命、打谁、命中几次 → `Effect` + `HitPolicy`。
 3. 英雄 JSON 是数值与效果的 **单一来源**；TypeScript 只做通用执行、校验与注册表映射。
 4. 所有伤害路径 **必须** 经过同一套 `Settlement` 管线（含 `TargetFilter` + `canSee`）。
@@ -115,7 +115,7 @@ interface CastSnapshot {
 
 **构建时机**：`SkillBook.start` 之前，由 `practice-session`（或战斗 session）根据瞄准会话 + 索敌结果构建。
 
-**废弃**：`CastOptions` 仅作迁移期适配，重构完成后删除。
+旧施法入参已删除；`SkillBook.start` 与 `startSkill` 仅接受 `CastSnapshot`。
 
 ### 3.2 Skill（技能定义）
 

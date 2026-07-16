@@ -1,12 +1,13 @@
-import { filterTargets } from '../../combat/target-filter';
 import { facingToward } from '../../combat/auto-attack-intent';
-import type { TargetFilter, Team } from '../../skills/types';
+import { filterTargets } from '../../combat/target-filter';
+import { settleHit } from '../../combat/settlement';
+import type { CombatEvent, TargetFilter, Team } from '../../skills/types';
 import type { Vec2 } from '../../skills/vec2';
 import { sweptHitsTarget } from './collision';
 import {
   nextEffectId,
-  resolveDamageAmount,
-  type EffectDamageEvent,
+  effectOwner,
+  settlementFromDamage,
   type HitPolicy,
   type PersistentAreaConfig,
   type ProjectileConfig,
@@ -20,37 +21,16 @@ export interface ProjectileEffect extends SkillEffectEntity {
   getPosition(): Vec2;
 }
 
-function canHitTarget(
-  targetId: string,
-  hitTargetIds: Set<string>,
-  hitCounts: Map<string, number>,
-  policy: HitPolicy,
-): boolean {
-  const maxHits = policy.maxHits ?? 1;
-  const maxPerTarget = policy.maxHitsPerTarget ?? 1;
-  if (hitTargetIds.size >= maxHits) return false;
-  const count = hitCounts.get(targetId) ?? 0;
-  return count < maxPerTarget;
-}
-
-function recordHit(
-  targetId: string,
-  hitTargetIds: Set<string>,
-  hitCounts: Map<string, number>,
-): void {
-  hitTargetIds.add(targetId);
-  hitCounts.set(targetId, (hitCounts.get(targetId) ?? 0) + 1);
-}
-
 export function createProjectileEffect(
   ownerId: string,
   sourceTeam: Team,
   skillId: string,
   config: ProjectileConfig,
+  castId = `effect-${skillId}`,
 ): ProjectileEffect {
   const id = nextEffectId('projectile');
-  let position: Vec2 = { x: config.origin.x, z: config.origin.z };
-  let previousPosition: Vec2 = { x: config.origin.x, z: config.origin.z };
+  let position = { ...config.origin };
+  let previousPosition = { ...config.origin };
   let distanceTravelled = 0;
   let forwardRad = config.forwardRad;
   let lockedTargetId = config.targetId;
@@ -58,33 +38,30 @@ export function createProjectileEffect(
   const hitTargetIds = new Set<string>();
   const hitCounts = new Map<string, number>();
   const policy: HitPolicy = config.hitPolicy ?? { maxHits: 1 };
-  const pierceRemaining = policy.pierce ?? 0;
   let pierceUsed = 0;
-
   const filter: TargetFilter = {
     casterId: ownerId,
     casterTeam: sourceTeam,
     includeNeutral: true,
+    targetableOnly: true,
   };
 
   const entity: ProjectileEffect = {
     id,
+    castId,
     ownerId,
     sourceTeam,
     skillId,
     kind: 'projectile',
     expired: false,
-    collisionRadius: config.collisionRadius,
+    collisionRadius: config.collision.radius,
     spawnZoneOnExpire: config.spawnZoneOnExpire,
-    getPosition() {
-      return { x: position.x, z: position.z };
-    },
+    getPosition: () => ({ ...position }),
     tick(dt, ctx) {
       if (entity.expired) return [];
-
-      const events: EffectDamageEvent[] = [];
-      previousPosition = { x: position.x, z: position.z };
-
+      const owner = effectOwner(ctx.world, ownerId, sourceTeam, config.origin);
+      const events: CombatEvent[] = [];
+      previousPosition = { ...position };
       if (homingActive && lockedTargetId) {
         const target = ctx.world.getUnit(lockedTargetId);
         if (!target || target.hp <= 0) {
@@ -93,61 +70,48 @@ export function createProjectileEffect(
             entity.expired = true;
             return events;
           }
-          if (lostPolicy === 'continue-forward') {
-            homingActive = false;
-          }
+          homingActive = false;
         } else {
           forwardRad = facingToward(position, target.position);
         }
       }
-
       const step = config.speed * dt;
       position = {
         x: position.x + Math.sin(forwardRad) * step,
         z: position.z - Math.cos(forwardRad) * step,
       };
       distanceTravelled += step;
-
       const candidates = filterTargets(
-        ctx.world.unitsNear(position, config.collisionRadius + 2),
+        ctx.world.unitsNear(position, config.collision.radius + 2),
         filter,
       );
-
       for (const target of candidates) {
-        if (!sweptHitsTarget(previousPosition, position, config.collisionRadius, target)) {
-          continue;
-        }
-        if (!canHitTarget(target.id, hitTargetIds, hitCounts, policy)) continue;
-
-        recordHit(target.id, hitTargetIds, hitCounts);
-        events.push({
-          targetId: target.id,
-          damage: resolveDamageAmount(config.damage),
-          isCrit: config.damage.isCrit ?? false,
-        });
-
-        const maxHits = policy.maxHits ?? 1;
-        if (hitTargetIds.size >= maxHits) {
-          if (pierceUsed < pierceRemaining) {
+        if (!sweptHitsTarget(previousPosition, position, config.collision.radius, target)) continue;
+        const maxPerTarget = policy.maxHitsPerTarget ?? 1;
+        if ((hitCounts.get(target.id) ?? 0) >= maxPerTarget) continue;
+        const event = settleHit(
+          { caster: owner, world: ctx.world, now: ctx.now, castSnapshot: {
+            castId, casterId: ownerId, skillId, origin: config.origin, forwardRad: config.forwardRad,
+          } },
+          { target, origin: position, forwardRad },
+          settlementFromDamage(config.damage),
+        );
+        if (event) events.push(event);
+        hitTargetIds.add(target.id);
+        hitCounts.set(target.id, (hitCounts.get(target.id) ?? 0) + 1);
+        if (hitTargetIds.size >= (policy.maxHits ?? 1)) {
+          if (pierceUsed < (policy.pierce ?? 0)) {
             pierceUsed += 1;
             hitTargetIds.clear();
-            hitCounts.clear();
-            hitTargetIds.add(target.id);
-            hitCounts.set(target.id, 1);
-            continue;
+          } else {
+            entity.expired = true;
+            break;
           }
-          entity.expired = true;
-          break;
         }
       }
-
-      if (!entity.expired && distanceTravelled >= config.maxRange) {
-        entity.expired = true;
-      }
-
+      if (!entity.expired && distanceTravelled >= config.maxRange) entity.expired = true;
       return events;
     },
   };
-
   return entity;
 }

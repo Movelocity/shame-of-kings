@@ -7,9 +7,9 @@
 // 与 M3 / P2 的关系:
 //  - M3 T3.2 PracticeDummy 与 T3.1 亚瑟共用(本文件无 Unit 引用)
 //  - P2 T5C.3 VisionSystem 把 hit.target 拿去做 canSee 过滤,
-//    所以本文件不内置视野判断;留给 DamageFormula。
+//    所以本文件不内置视野判断;留给 settlement。
 import { filterTargets } from '../combat/target-filter';
-import type { Hit, HitShape, TargetFilter, Unit, WorldLike } from './types';
+import type { Hit, HitGeometry, TargetFilter, Unit, WorldLike } from './types';
 import type { Vec2 } from './vec2';
 
 export interface ResolveHitsOptions {
@@ -37,7 +37,7 @@ export function hitSelf(caster: Unit, origin: Vec2 = caster.position): readonly 
 export function hitCircle(
   world: WorldLike,
   caster: Unit,
-  shape: Extract<HitShape, { kind: 'circle' }>,
+  shape: Extract<HitGeometry, { kind: 'circle' }>,
   origin: Vec2 = caster.position,
   filter?: TargetFilter,
 ): readonly Hit[] {
@@ -63,7 +63,7 @@ export function hitCircle(
 export function hitRect(
   world: WorldLike,
   caster: Unit,
-  shape: Extract<HitShape, { kind: 'rect' }>,
+  shape: Extract<HitGeometry, { kind: 'rect' }>,
   forwardRad: number,
   origin: Vec2 = caster.position,
   filter?: TargetFilter,
@@ -99,7 +99,7 @@ export function hitRect(
 export function hitCone(
   world: WorldLike,
   caster: Unit,
-  shape: Extract<HitShape, { kind: 'cone' }>,
+  shape: Extract<HitGeometry, { kind: 'cone' }>,
   forwardRad: number,
   origin: Vec2 = caster.position,
   filter?: TargetFilter,
@@ -127,7 +127,7 @@ export function hitCone(
 export function hitTarget(
   world: WorldLike,
   caster: Unit,
-  shape: Extract<HitShape, { kind: 'target' }>,
+  shape: Extract<HitGeometry, { kind: 'target' }>,
   origin: Vec2 = caster.position,
   filter?: TargetFilter,
   lockedTargetId?: string,
@@ -156,11 +156,11 @@ export function hitTarget(
   return best ? [{ target: best.unit, origin, forwardRad: 0 }] : [];
 }
 
-/** 统一入口:按 HitShape 分派 */
+/** 统一入口:按 HitGeometry 分派 */
 export function resolveHits(
   world: WorldLike,
   caster: Unit,
-  shape: HitShape,
+  shape: HitGeometry,
   forwardRad: number,
   options: ResolveHitsOptions = {},
 ): readonly Hit[] {

@@ -11,7 +11,7 @@ import {
   ShapeGeometry,
   BoxGeometry,
 } from 'three';
-import type { HitShape } from '../skills/types';
+import type { HitGeometry } from '../skills/types';
 import type { Vec2 } from '../skills/vec2';
 import {
   AIM_HITBOX_PRESET,
@@ -43,13 +43,13 @@ interface BoundFlash {
 export interface HitboxVfxHandle {
   readonly group: Group;
   /** 在 origin 处以 forwardRad 朝向画一次命中盒 */
-  spawn(shape: HitShape, origin: Vec2, forwardRad: number): void;
+  spawn(shape: HitGeometry, origin: Vec2, forwardRad: number): void;
   /** 在短暂显示期间持续贴住 originProvider 返回的位置 */
-  spawnAttached(shape: HitShape, originProvider: () => Vec2, forwardRad: number): void;
+  spawnAttached(shape: HitGeometry, originProvider: () => Vec2, forwardRad: number): void;
   /** 绑定 effect 几何,直到 pruneBoundEffects 移除 */
   bindEffect(
     id: string,
-    shape: HitShape,
+    shape: HitGeometry,
     originProvider: () => Vec2,
     forwardRad?: number,
   ): void;
@@ -127,7 +127,7 @@ function buildTarget(range: number, preset: VfxColorPreset): Mesh {
   return new Mesh(geo, mat);
 }
 
-function buildMesh(shape: HitShape, preset: VfxColorPreset = FLASH_PRESET): Mesh {
+function buildMesh(shape: HitGeometry, preset: VfxColorPreset = FLASH_PRESET): Mesh {
   switch (shape.kind) {
     case 'self':
       return buildSelf(preset);
@@ -148,7 +148,7 @@ export function createHitboxVfx(): HitboxVfxHandle {
   const flashes: Flash[] = [];
   const bound = new Map<string, BoundFlash>();
 
-  function spawn(shape: HitShape, origin: Vec2, forwardRad: number): void {
+  function spawn(shape: HitGeometry, origin: Vec2, forwardRad: number): void {
     const mesh = buildMesh(shape);
     applyPose(mesh, origin, forwardRad);
     group.add(mesh);
@@ -162,7 +162,7 @@ export function createHitboxVfx(): HitboxVfxHandle {
   }
 
   function spawnAttached(
-    shape: HitShape,
+    shape: HitGeometry,
     originProvider: () => Vec2,
     forwardRad: number,
   ): void {
@@ -181,7 +181,7 @@ export function createHitboxVfx(): HitboxVfxHandle {
 
   function bindEffect(
     id: string,
-    shape: HitShape,
+    shape: HitGeometry,
     originProvider: () => Vec2,
     forwardRad = 0,
   ): void {

@@ -1,17 +1,17 @@
 import {
-  angelaSkillByHotkey,
   getAngelaAutoAttackRanges,
+  loadAngelaSkills,
   ANGELA_DATA,
 } from './angela';
 import {
-  arthurSkillByHotkey,
   getArthurAutoAttackRanges,
   getArthurJudgementAcquireRange,
   ARTHUR_DATA,
+  loadArthurSkills,
 } from './arthur';
 import {
-  dajiSkillByHotkey,
   getDajiAutoAttackRanges,
+  loadDajiSkills,
   DAJI_DATA,
 } from './daji';
 import type { Skill } from '../skills/types';
@@ -20,6 +20,20 @@ import type { AimKind } from './hero-kit';
 export type HeroId = 'arthur' | 'daji' | 'angela';
 
 export const HERO_IDS: readonly HeroId[] = ['arthur', 'daji', 'angela'];
+
+const heroSkillCache = new Map<HeroId, readonly Skill[]>();
+
+function heroSkills(heroId: HeroId): readonly Skill[] {
+  const cached = heroSkillCache.get(heroId);
+  if (cached) return cached;
+  const built = heroId === 'arthur'
+    ? loadArthurSkills()
+    : heroId === 'daji'
+      ? loadDajiSkills()
+      : loadAngelaSkills();
+  heroSkillCache.set(heroId, built);
+  return built;
+}
 
 export function heroDisplayName(heroId: HeroId): string {
   switch (heroId) {
@@ -33,14 +47,8 @@ export function heroDisplayName(heroId: HeroId): string {
 }
 
 export function heroSkillByHotkey(heroId: HeroId, hotkey: string): Skill | null {
-  switch (heroId) {
-    case 'arthur':
-      return arthurSkillByHotkey(hotkey);
-    case 'daji':
-      return dajiSkillByHotkey(hotkey);
-    case 'angela':
-      return angelaSkillByHotkey(hotkey);
-  }
+  const slot = getHeroKitSkills(heroId).find((skill) => skill.hotkey === hotkey);
+  return heroSkills(heroId).find((skill) => skill.id === slot?.id) ?? null;
 }
 
 export function getHeroAutoAttackRanges(heroId: HeroId): {

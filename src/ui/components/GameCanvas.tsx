@@ -15,7 +15,7 @@ import { ZERO_JOYSTICK, type JoystickState } from '../../engine/input/joystick';
 import { createKeyboardMove } from '../../engine/input/keyboard-move';
 import { isMobileUA } from '../../platform/isMobileUA';
 import { MobileControls } from './MobileControls';
-import type { Skill, SkillInstance } from '../../game/skills/types';
+import type { Skill, SkillDelivery, SkillInstance } from '../../game/skills/types';
 import { asUnit } from '../../game/units/as-unit';
 import {
   getHeroHpMax,
@@ -42,6 +42,20 @@ import type { ProjectileEffect } from '../../game/world/skill-effects/projectile
 import type { SweptRectEffect } from '../../game/world/skill-effects/swept-rect';
 import { createWorldHpBars, FACTION_COLORS } from '../../game/world/WorldHpBars';
 import { SkillHud, type SkillHudHandle } from './SkillHud';
+
+function skillHitDelivery(
+  skill: Skill,
+): Extract<SkillDelivery, { mode: 'instant-hit' | 'interval-hit' }> | null {
+  const delivery = skill.delivery.mode === 'composite'
+    ? skill.delivery.parts.find(
+        (part): part is Extract<SkillDelivery, { mode: 'instant-hit' | 'interval-hit' }> =>
+          part.mode === 'instant-hit' || part.mode === 'interval-hit',
+      )
+    : skill.delivery;
+  return delivery && (delivery.mode === 'instant-hit' || delivery.mode === 'interval-hit')
+    ? delivery
+    : null;
+}
 
 const DEFAULT_HERO: HeroId = 'arthur';
 
@@ -278,7 +292,7 @@ export function GameCanvas({
       for (const r of results) {
         const target = session.world.getUnit(r.targetId);
         if (!target) continue;
-        floaters.add(r.targetId, r.damage, target.position, r.isCrit);
+        floaters.add(r.targetId, r.payload.damage, target.position, r.payload.isCrit);
       }
     });
 
@@ -421,9 +435,11 @@ export function GameCanvas({
 
         const aimPreview = session.getAimingPreview();
         if (aimPreview) {
-          hitboxVfx.bindEffect(
+          const previewGeometry =
+            aimPreview.skill.aim?.preview ?? skillHitDelivery(aimPreview.skill)?.geometry;
+          if (previewGeometry) hitboxVfx.bindEffect(
             'aim-preview',
-            aimPreview.skill.hit,
+            previewGeometry,
             () => playerUnit.position,
             aimPreview.aimForwardRad,
           );
@@ -433,8 +449,8 @@ export function GameCanvas({
               ? session.world.getUnit(aimPreview.previewTargetId)?.position ?? null
               : null;
             const lockRange =
-              aimKind === 'lock-target' && aimPreview.skill.hit.kind === 'target'
-                ? aimPreview.skill.hit.range
+              aimKind === 'lock-target' && aimPreview.skill.aim?.maxRange !== undefined
+                ? aimPreview.skill.aim.maxRange
                 : undefined;
             aimIndicator.show({
               aimKind,
@@ -462,22 +478,19 @@ export function GameCanvas({
         });
 
         const activeInst = session.skillBook.active;
-        const effectDrivenVfx =
-          activeInst !== null &&
-          activeInst.skill.onActivate !== undefined &&
-          activeInst.skill.damage === undefined;
-        if (activeInst && !effectDrivenVfx) {
+        const activeHitDelivery = activeInst ? skillHitDelivery(activeInst.skill) : null;
+        if (activeInst && activeHitDelivery) {
           const shown = shownHitboxActivations.get(activeInst) ?? 0;
           for (let i = shown; i < activeInst.hitboxActivations; i++) {
-            if (activeInst.skill.hitOrigin === 'cast') {
+            if (activeHitDelivery.hitOrigin === 'cast') {
               hitboxVfx.spawn(
-                activeInst.skill.hit,
+                activeHitDelivery.geometry,
                 activeInst.origin,
                 activeInst.forwardRad,
               );
             } else {
               hitboxVfx.spawnAttached(
-                activeInst.skill.hit,
+                activeHitDelivery.geometry,
                 () => playerUnit.position,
                 activeInst.forwardRad,
               );

@@ -17,6 +17,7 @@ function mkPlayer(): Unit {
     hp: 1000,
     hpMax: 1000,
     isStatic: false,
+    targetable: true,
     collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
@@ -131,5 +132,28 @@ describe('createConvergentBurst', () => {
     expect(
       (mid as { getPosition(): { z: number } }).getPosition().z,
     ).toBeLessThan(targetPoint.z);
+  });
+
+  it('spawnInterval staggers projectiles and preserves castId', () => {
+    const player = mkPlayer();
+    const world = createWorldState({ units: [player] });
+    const snapshot = createCastSnapshot({
+      casterId: player.id,
+      skillId: 'flame-burst',
+      origin: player.position,
+      forwardRad: 0,
+      targetPoint: { x: 0, z: -5 },
+    });
+    world.spawnEffect(createConvergentBurst({
+      snapshot, sourceTeam: 'blue', projectileCount: 3, projectileSpeed: 12,
+      travelDistance: 12, fanHalfAngle: 0.5, spawnInterval: 0.1,
+      collisionRadius: 0.4, damage: 150,
+    }));
+    world.tickEffects(0.01);
+    expect([...world.effects.values()].filter((effect) => effect.kind === 'projectile')).toHaveLength(1);
+    world.tickEffects(0.1);
+    const projectiles = [...world.effects.values()].filter((effect) => effect.kind === 'projectile');
+    expect(projectiles).toHaveLength(2);
+    expect(projectiles.every((effect) => effect.castId === snapshot.castId)).toBe(true);
   });
 });

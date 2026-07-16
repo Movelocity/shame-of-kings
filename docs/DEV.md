@@ -112,7 +112,8 @@ M0 ✓ ── M1 ✓ ── M2 ✓(大半) ── M3 △
 | CastSnapshot + TargetFilter | ✓ | `startSkill` / `SkillBook` BREAKING 入参迁移 |
 | SkillEffectEntity 运行时 | ✓ | 弹道扫掠碰撞、弹道转持续区域 |
 | 妲己 / 安琪拉 loader | ✓ | 练习场 DEV 英雄切换 |
-| 安琪拉光束 | 暂缓 | spike 后另开 delta |
+| 蓝图技能域重构 | ✓ | `SkillDelivery` + `CombatEvent` + settlement + effect registry |
+| 安琪拉光束 | ✓ | `interval-hit` + `hitOrigin: caster`，无临时 beam entity |
 
 | ID | 任务 | 验收 |
 |---|---|---|
@@ -129,7 +130,7 @@ M0 ✓ ── M1 ✓ ── M2 ✓(大半) ── M3 △
 | **T35.1** 🤖 | **英雄状态栈**（攻击/移速叠加；指定技能强化；持续时间与可用次数；索敌/非索敌 dash） | 单测：状态叠加、tick 过期、按技能次数消耗 |
 | **T35.2** 🤖 | 一技能 **契约之盾**：移速 buff + 下一次普攻改为 dash；点 1 本身不位移 | 放 1 后移速变化可见；下次普攻突进并消耗强化 |
 | **T35.3** 🤖 | 被动 **圣光守护** 最小实现（受伤概率回血 **或** 脱战加速，先做一种） | 桩打自己或自损钩子可触发；DebugOverlay 可观察 |
-| **T35.4** 🤖 | 二技能 **间歇圈伤**（`damageInterval` × `damageTicks`）；三技能落地 **同半径圈 + 击飞**（血条上方状态） | 机制在桩上可辨认 |
+| **T35.4** ✓ | 二技能 **间歇圈伤**（delivery interval/ticks）；三技能落地 **同半径圈 + 击飞**（统一 CombatEvent） | 自动化回归已覆盖 |
 | **T35.5** 🔁 | `pnpm typecheck` + `pnpm test`；桌面手动 J/U/I/O + K/L 全循环 | 机制表 4 行各至少有一条「可见反馈」 |
 
 普通普攻的自动获取/追击范围恒为 `attackRange × 1.3`；超出该范围时直接空 A。技能状态栈赋予的强化普攻有独立 `acquireRange`，通常大于普通普攻索敌范围。
@@ -254,7 +255,7 @@ pnpm dev
 | **Skill-stick** | 从技能图标 pointerdown 后拖拽；超过 **8px 死区** 后上报屏幕增量，经视口归一化转为世界偏移 |
 | **优先级** | 存在 skill-stick 拖拽时，忽略移动摇杆 / WASD 的瞄准输入；桌面热键进入瞄准且无 stick 时 fallback 到 WASD |
 | **direction** | 拖拽方向 → `aimForwardRad`（与摇杆约定一致） |
-| **area** | 拖拽偏移 → `targetPoint = 施法者位置 + 世界偏移`，钳制到 `maxRange`（来自 `hit.radius` / `hit.range`） |
+| **area** | 拖拽偏移 → `targetPoint = 施法者位置 + 世界偏移`，钳制到 `maxRange`（优先来自 `aim.maxRange`，其次由 delivery/effect 推导） |
 | **area 指示器** | 施法者脚下范围环 + 汇聚点落点圆标 |
 | **提交** | `commitAim` 将 `aimTargetPoint` 写入 `CastSnapshot.targetPoint`；未选定落点时不施法 |
 

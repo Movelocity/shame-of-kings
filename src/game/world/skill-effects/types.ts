@@ -1,20 +1,23 @@
-import type { DamageSnapshot, Team } from '../../skills/types';
+import type {
+  CollisionShape,
+  CombatEvent,
+  DamageSnapshot,
+  Team,
+  Unit,
+} from '../../skills/types';
 import type { Vec2 } from '../../skills/vec2';
 
 export type OnTargetLostPolicy = 'expire' | 'continue-forward' | 'retarget';
 
-/** 弹道/区域命中策略 */
 export interface HitPolicy {
-  /** 总命中次数上限;1 = 首敌停止 */
   maxHits?: number;
-  /** 同一目标最多命中次数 */
   maxHitsPerTarget?: number;
-  /** 穿透次数(额外穿过目标继续飞) */
   pierce?: number;
 }
 
 export interface SkillEffectEntity {
   readonly id: string;
+  readonly castId: string;
   readonly ownerId: string;
   readonly sourceTeam: Team;
   readonly skillId: string;
@@ -25,15 +28,8 @@ export interface SkillEffectEntity {
     | 'projectile-burst'
     | 'convergent-burst';
   expired: boolean;
-  /** 施法者离场后是否销毁;默认 false */
   readonly destroyWhenOwnerGone?: boolean;
-  tick(dt: number, ctx: EffectTickContext): readonly EffectDamageEvent[];
-}
-
-export interface EffectDamageEvent {
-  readonly targetId: string;
-  readonly damage: number;
-  readonly isCrit: boolean;
+  tick(dt: number, ctx: EffectTickContext): readonly CombatEvent[];
 }
 
 export interface EffectTickContext {
@@ -42,16 +38,16 @@ export interface EffectTickContext {
 }
 
 export interface EffectWorldLike {
-  unitsNear(origin: Vec2, radius: number): readonly import('../../skills/types').Unit[];
-  getUnit(id: string): import('../../skills/types').Unit | null;
+  unitsNear(origin: Vec2, radius: number): readonly Unit[];
+  getUnit(id: string): Unit | null;
   spawnEffect(effect: SkillEffectEntity): void;
-  canSee(observer: import('../../skills/types').Unit, target: import('../../skills/types').Unit): boolean;
+  canSee(observer: Unit, target: Unit): boolean;
 }
 
 export interface ProjectileConfig {
   readonly speed: number;
   readonly maxRange: number;
-  readonly collisionRadius: number;
+  readonly collision: Extract<CollisionShape, { kind: 'circle' }>;
   readonly homing?: boolean;
   readonly onTargetLost?: OnTargetLostPolicy;
   readonly hitPolicy?: HitPolicy;
@@ -59,7 +55,6 @@ export interface ProjectileConfig {
   readonly targetId?: string;
   readonly forwardRad: number;
   readonly origin: Vec2;
-  /** 命中或寿命终点生成持续区域 */
   readonly spawnZoneOnExpire?: PersistentAreaConfig;
 }
 
@@ -77,11 +72,31 @@ export function nextEffectId(prefix = 'effect'): string {
   return `${prefix}-${effectIdCounter}`;
 }
 
-/** 从 DamageSnapshot 结算数值 */
-export function resolveDamageAmount(
-  snapshot: DamageSnapshot,
-  attackPowerMultiplier = 1,
-): number {
-  const mult = snapshot.scalesWithAttackPower ? attackPowerMultiplier : 1;
-  return snapshot.amount * mult;
+export function settlementFromDamage(snapshot: DamageSnapshot) {
+  return {
+    baseDamage: snapshot.amount,
+    scalesWithAttackPower: snapshot.scalesWithAttackPower,
+    isCrit: snapshot.isCrit,
+    timing: 'at-spawn' as const,
+  };
+}
+
+export function effectOwner(
+  world: EffectWorldLike,
+  ownerId: string,
+  sourceTeam: Team,
+  position: Vec2,
+): Unit {
+  return world.getUnit(ownerId) ?? {
+    id: ownerId,
+    team: sourceTeam,
+    position: { ...position },
+    hp: 1,
+    hpMax: 1,
+    isStatic: false,
+    targetable: false,
+    collisionRadius: 0.5,
+    facingRad: 0,
+    hidden: { inBush: false, outOfVisionFrom: new Set() },
+  };
 }

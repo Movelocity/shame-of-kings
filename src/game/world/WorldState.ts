@@ -1,32 +1,10 @@
-// M3 T3.3:WorldState — 替换 M2 临时 DebugWorld
-// 内容:unit 注册表 + WorldLike 实现 + onDamage 订阅 + effect 生命周期
-import type { DamageResult, Unit, WorldLike } from '../skills/types';
+import type { CombatEvent, Unit, WorldLike } from '../skills/types';
 import type { Vec2 } from '../skills/vec2';
 import { spawnZoneIfProjectileExpired } from './skill-effects/spawn';
-import type { EffectDamageEvent, SkillEffectEntity } from './skill-effects/types';
+import type { SkillEffectEntity } from './skill-effects/types';
 
-export type DamageListener = (results: readonly DamageResult[]) => void;
-
-function createDamageBus(): {
-  emit(results: readonly DamageResult[]): void;
-  subscribe(fn: DamageListener): () => void;
-} {
-  const listeners = new Set<DamageListener>();
-  return {
-    emit(results) {
-      for (const fn of listeners) fn(results);
-    },
-    subscribe(fn) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-  };
-}
-
-export interface EffectTickResult {
-  readonly damageEvents: readonly EffectDamageEvent[];
-  readonly expiredIds: readonly string[];
-}
+export type DamageEvent = Extract<CombatEvent, { kind: 'damage' }>;
+export type DamageListener = (events: readonly DamageEvent[]) => void;
 
 export interface WorldStateInit {
   units: readonly Unit[];
@@ -40,37 +18,26 @@ export interface WorldStateHandle extends WorldLike {
   register(unit: Unit): void;
   unregister(unitId: string): void;
   getUnit(id: string): Unit | null;
-  notifyDamage(results: readonly DamageResult[]): void;
+  notifyDamage(events: readonly DamageEvent[]): void;
   spawnEffect(effect: SkillEffectEntity): void;
-  tickEffects(dt: number): EffectTickResult;
+  tickEffects(dt: number): readonly CombatEvent[];
   clearEffects(): void;
 }
 
 export function createWorldState(init: WorldStateInit): WorldStateHandle {
-  const unitsMap = new Map<string, Unit>();
-  for (const u of init.units) unitsMap.set(u.id, u);
-  const effectsMap = new Map<string, SkillEffectEntity>();
+  const units = new Map(init.units.map((unit) => [unit.id, unit]));
+  const effects = new Map<string, SkillEffectEntity>();
+  const listeners = new Set<DamageListener>();
   const canSee = init.canSee ?? (() => true);
-  const bus = createDamageBus();
-
   const effectWorld = {
     unitsNear(_origin: Vec2, _radius: number): readonly Unit[] {
-      return Array.from(unitsMap.values());
+      return [...units.values()];
     },
     getUnit(id: string): Unit | null {
-      return unitsMap.get(id) ?? null;
+      return units.get(id) ?? null;
     },
     spawnEffect(effect: SkillEffectEntity): void {
-      effectsMap.set(effect.id, effect);
-    },
-    canSee(observer: Unit, target: Unit): boolean {
-      return canSee(observer, target);
-    },
-  };
-
-  const world: WorldLike = {
-    unitsNear(_origin: Vec2, _radius: number): readonly Unit[] {
-      return Array.from(unitsMap.values());
+      effects.set(effect.id, effect);
     },
     canSee(observer: Unit, target: Unit): boolean {
       return canSee(observer, target);
@@ -78,71 +45,48 @@ export function createWorldState(init: WorldStateInit): WorldStateHandle {
   };
 
   return {
-    ...world,
+    unitsNear: effectWorld.unitsNear,
+    canSee: effectWorld.canSee,
     get units() {
-      return unitsMap;
+      return units;
     },
     get effects() {
-      return effectsMap;
+      return effects;
     },
     subscribeDamage(fn) {
-      return bus.subscribe(fn);
+      listeners.add(fn);
+      return () => listeners.delete(fn);
     },
     register(unit) {
-      unitsMap.set(unit.id, unit);
+      units.set(unit.id, unit);
     },
     unregister(unitId) {
-      unitsMap.delete(unitId);
+      units.delete(unitId);
     },
-    getUnit(id) {
-      return unitsMap.get(id) ?? null;
+    getUnit: effectWorld.getUnit,
+    notifyDamage(events) {
+      for (const listener of listeners) listener(events);
     },
-    notifyDamage(results) {
-      bus.emit(results);
-    },
-    spawnEffect(effect) {
-      effectsMap.set(effect.id, effect);
-    },
+    spawnEffect: effectWorld.spawnEffect,
     tickEffects(dt) {
-      const damageEvents: EffectDamageEvent[] = [];
+      const events: CombatEvent[] = [];
       const expiredIds: string[] = [];
-
-      for (const [id, effect] of effectsMap) {
+      for (const [id, effect] of effects) {
         if (effect.destroyWhenOwnerGone) {
-          const owner = unitsMap.get(effect.ownerId);
-          if (!owner || owner.hp <= 0) {
-            effect.expired = true;
-          }
+          const owner = units.get(effect.ownerId);
+          if (!owner || owner.hp <= 0) effect.expired = true;
         }
-
-        const events = effect.tick(dt, { world: effectWorld, now: 0 });
-        damageEvents.push(...events);
-
+        events.push(...effect.tick(dt, { world: effectWorld, now: 0 }));
         if (effect.expired) {
           spawnZoneIfProjectileExpired(effect, effectWorld);
           expiredIds.push(id);
         }
       }
-
-      for (const id of expiredIds) {
-        effectsMap.delete(id);
-      }
-
-      return { damageEvents, expiredIds };
+      for (const id of expiredIds) effects.delete(id);
+      return events;
     },
     clearEffects() {
-      effectsMap.clear();
+      effects.clear();
     },
   };
-}
-
-/** effect 伤害事件转 DamageResult */
-export function effectEventsToDamageResults(
-  events: readonly EffectDamageEvent[],
-): DamageResult[] {
-  return events.map((e) => ({
-    targetId: e.targetId,
-    damage: e.damage,
-    isCrit: e.isCrit,
-  }));
 }

@@ -1,9 +1,11 @@
+import { defaultTargetFilter } from '../../combat/target-filter';
+import { settleHit } from '../../combat/settlement';
 import { resolveHits } from '../../skills/hits';
-import type { TargetFilter, Team, Unit } from '../../skills/types';
+import type { CombatEvent, Team } from '../../skills/types';
 import {
   nextEffectId,
-  resolveDamageAmount,
-  type EffectDamageEvent,
+  effectOwner,
+  settlementFromDamage,
   type PersistentAreaConfig,
   type SkillEffectEntity,
 } from './types';
@@ -20,75 +22,48 @@ export function createPersistentAreaEffect(
   skillId: string,
   position: { x: number; z: number },
   config: PersistentAreaConfig,
+  castId = `effect-${skillId}`,
 ): PersistentAreaEffect {
-  const id = nextEffectId('zone');
   let elapsed = 0;
   let ticksDone = 0;
-
-  const filter: TargetFilter = {
-    casterId: ownerId,
-    casterTeam: sourceTeam,
-    includeNeutral: true,
-  };
-
   const entity: PersistentAreaEffect = {
-    id,
+    id: nextEffectId('zone'),
+    castId,
     ownerId,
     sourceTeam,
     skillId,
     kind: 'persistent-area',
-    position: { x: position.x, z: position.z },
+    position: { ...position },
     config,
     expired: false,
     tick(dt, ctx) {
       if (entity.expired) return [];
-
+      const owner = effectOwner(ctx.world, ownerId, sourceTeam, position);
       elapsed += dt;
-      const events: EffectDamageEvent[] = [];
-
-      while (
-        ticksDone < config.ticks &&
-        elapsed >= (ticksDone + 1) * config.tickInterval
-      ) {
-        const caster = ctx.world.getUnit(ownerId);
-        const dummyCaster: Unit = caster ?? {
-          id: ownerId,
-          team: sourceTeam,
-          position,
-          hp: 1,
-          hpMax: 1,
-          isStatic: false,
-          collisionRadius: 0.5,
-          facingRad: 0,
-          hidden: { inBush: false, outOfVisionFrom: new Set() },
-        };
-
+      const events: CombatEvent[] = [];
+      while (ticksDone < config.ticks && elapsed + 1e-9 >= (ticksDone + 1) * config.tickInterval) {
         const hits = resolveHits(
           ctx.world,
-          dummyCaster,
+          owner,
           { kind: 'circle', radius: config.radius },
           0,
-          { origin: position, filter },
+          { origin: position, filter: defaultTargetFilter(owner) },
         );
-
         for (const hit of hits) {
-          if (!hit.target) continue;
-          events.push({
-            targetId: hit.target.id,
-            damage: resolveDamageAmount(config.damage),
-            isCrit: config.damage.isCrit ?? false,
-          });
+          const event = settleHit(
+            { caster: owner, world: ctx.world, now: ctx.now, castSnapshot: {
+              castId, casterId: ownerId, skillId, origin: position, forwardRad: 0,
+            } },
+            hit,
+            settlementFromDamage(config.damage),
+          );
+          if (event) events.push(event);
         }
         ticksDone += 1;
       }
-
-      if (ticksDone >= config.ticks) {
-        entity.expired = true;
-      }
-
+      if (ticksDone >= config.ticks) entity.expired = true;
       return events;
     },
   };
-
   return entity;
 }

@@ -16,6 +16,7 @@ export function asUnit(
     hp,
     hpMax: hp,
     isStatic,
+    targetable: true,
     collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set<string>() },

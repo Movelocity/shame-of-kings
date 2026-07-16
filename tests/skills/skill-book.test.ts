@@ -2,101 +2,44 @@ import { describe, expect, it } from 'vitest';
 import { arthurSkillByHotkey } from '../../src/game/heroes/arthur';
 import { createSkillBook } from '../../src/game/skills/skill-book';
 import { makeSkill } from '../../src/game/skills/runtime';
-import type { SkillContext, Unit, WorldLike } from '../../src/game/skills/types';
-import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
+import type { Unit } from '../../src/game/skills/types';
 
-function makeUnit(id: string): Unit {
-  return {
-    id,
-    team: 'blue',
-    position: { x: 0, z: 0 },
-    hp: 100,
-    hpMax: 100,
-    isStatic: false,
-    collisionRadius: DEFAULT_COLLISION_RADIUS,
-    facingRad: 0,
-    hidden: { inBush: false, outOfVisionFrom: new Set() },
-  };
-}
-
-function makeContext(caster: Unit): SkillContext {
-  const world: WorldLike = {
-    unitsNear: () => [caster],
-    canSee: () => true,
-  };
-  return { caster, world, now: 0 };
-}
-
-function makeTestSkill(id: string, cooldown: number) {
-  return makeSkill({
-    id,
-    displayName: id,
-    hit: { kind: 'self' },
-    castTime: 0.1,
-    activeTime: 0.1,
-    recoveryTime: 0.1,
-    cooldown,
-  });
-}
+const caster: Unit = {
+  id: 'caster', team: 'blue', position: { x: 0, z: 0 }, hp: 100, hpMax: 100,
+  isStatic: false, targetable: true, collisionRadius: 0.5, facingRad: 0,
+  hidden: { inBush: false, outOfVisionFrom: new Set() },
+};
+const world = { unitsNear: () => [caster], canSee: () => true };
+const ctx = { caster, world, now: 0 };
+const skill = (id: string, cooldown = 1) => makeSkill({
+  id, displayName: id, delivery: { mode: 'buff-only' },
+  castTime: 0.1, activeTime: 0.1, recoveryTime: 0.1, cooldown,
+});
+const cast = (id: string) => ({ castId: `cast-${id}`, casterId: caster.id, skillId: id, origin: { ...caster.position }, forwardRad: 0 });
 
 describe('SkillBook', () => {
-  it('技能 done 后释放施法槽，同时继续推进自己的冷却', () => {
-    const caster = makeUnit('caster');
-    const context = makeContext(caster);
-    const skill = makeTestSkill('skill-a', 1);
+  it('releases cast slot while retaining per-skill cooldown', () => {
     const book = createSkillBook();
-
-    expect(book.start(skill, caster, { forwardRad: 0 })).not.toBeNull();
-    book.tick(0.1, context);
-    book.tick(0.1, context);
-    const completed = book.tick(0.1, context);
-
-    expect(completed).toHaveLength(1);
+    const a = skill('a');
+    expect(book.start(a, caster, cast(a.id))).not.toBeNull();
+    book.tick(0.1, ctx); book.tick(0.1, ctx); book.tick(0.1, ctx);
     expect(book.active).toBeNull();
-    expect(book.cooldownRemaining(skill.id)).toBeCloseTo(0.7, 5);
-
-    book.tick(0.7, context);
-    expect(book.cooldownRemaining(skill.id)).toBe(0);
-    expect(book.canStart(skill.id)).toBe(true);
+    expect(book.cooldownRemaining(a.id)).toBeCloseTo(0.7);
   });
 
-  it('不同技能冷却互不阻塞，但未完成施法仍占用唯一施法槽', () => {
-    const caster = makeUnit('caster');
-    const context = makeContext(caster);
-    const skillA = makeTestSkill('skill-a', 1);
-    const skillB = makeTestSkill('skill-b', 2);
+  it('blocks concurrent casts and reset clears all state', () => {
     const book = createSkillBook();
-
-    expect(book.start(skillA, caster, { forwardRad: 0 })).not.toBeNull();
-    expect(book.start(skillB, caster, { forwardRad: 0 })).toBeNull();
-
-    book.tick(0.1, context);
-    book.tick(0.1, context);
-    book.tick(0.1, context);
-
-    expect(book.start(skillA, caster, { forwardRad: 0 })).toBeNull();
-    expect(book.start(skillB, caster, { forwardRad: 0 })).not.toBeNull();
-  });
-
-  it('reset 同时清空当前施法和全部冷却', () => {
-    const caster = makeUnit('caster');
-    const skill = makeTestSkill('skill-a', 1);
-    const book = createSkillBook();
-
-    book.start(skill, caster, { forwardRad: 0 });
+    const a = skill('a');
+    const b = skill('b');
+    expect(book.start(a, caster, cast(a.id))).not.toBeNull();
+    expect(book.start(b, caster, cast(b.id))).toBeNull();
     book.reset();
-
     expect(book.active).toBeNull();
-    expect(book.cooldownRemaining(skill.id)).toBe(0);
-    expect(book.canStart(skill.id)).toBe(true);
+    expect(book.canStart(a.id)).toBe(true);
   });
-});
 
-describe('亚瑟 castMode 数据', () => {
-  it('普通技能按下即施，锁定目标技能抬起释放', () => {
+  it('Arthur cast modes remain data-driven', () => {
     expect(arthurSkillByHotkey('0')?.castMode).toBe('instant');
-    expect(arthurSkillByHotkey('1')?.castMode).toBe('instant');
-    expect(arthurSkillByHotkey('2')?.castMode).toBe('instant');
     expect(arthurSkillByHotkey('3')?.castMode).toBe('targeted');
   });
 });

@@ -16,6 +16,7 @@ function mkPlayer(): Unit {
     hp: 1000,
     hpMax: 1000,
     isStatic: false,
+    targetable: true,
     collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
@@ -67,7 +68,7 @@ describe('projectile-then-zone', () => {
           if (e.kind === 'persistent-area') zoneSpawned = true;
         }
       }
-      if (result.damageEvents.length > 0) break;
+      if (result.length > 0) break;
     }
 
     expect(zoneSpawned).toBe(true);
@@ -112,11 +113,28 @@ describe('daji multi-projectile', () => {
     let totalHits = 0;
     for (let i = 0; i < 200; i++) {
       const result = world.tickEffects(dt);
-      totalHits += result.damageEvents.length;
+      totalHits += result.length;
       if (world.effects.size === 0) break;
     }
 
     expect(totalHits).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('effect settlement visibility', () => {
+  it('projectile collision emits no event for an invisible target', () => {
+    const player = mkPlayer();
+    const dummy = createPracticeDummy();
+    dummy.position = { x: 0, z: 0 };
+    const world = createWorldState({ units: [player, dummy], canSee: () => false });
+    world.spawnEffect(spawnProjectile({
+      castId: 'cast-hidden', ownerId: player.id, sourceTeam: player.team,
+      skillId: 'hidden-shot', origin: player.position, forwardRad: 0,
+      speed: 20, maxRange: 15, damage: { amount: 100 },
+    }));
+    const events = [];
+    for (let i = 0; i < 120; i++) events.push(...world.tickEffects(1 / 60));
+    expect(events).toEqual([]);
   });
 });
 
@@ -197,7 +215,7 @@ describe('angela convergent-burst', () => {
     let totalHits = 0;
     for (let i = 0; i < 300; i++) {
       const result = world.tickEffects(dt);
-      totalHits += result.damageEvents.filter(
+      totalHits += result.filter(
         (e) => e.targetId === PRACTICE_DUMMY_ID,
       ).length;
       if (totalHits >= 5 && world.effects.size === 0) break;
@@ -235,7 +253,7 @@ describe('swept-rect blade', () => {
     let hit = false;
     for (let i = 0; i < 120; i++) {
       const result = world.tickEffects(dt);
-      if (result.damageEvents.some((e) => e.targetId === PRACTICE_DUMMY_ID)) {
+      if (result.some((e) => e.targetId === PRACTICE_DUMMY_ID)) {
         hit = true;
         break;
       }

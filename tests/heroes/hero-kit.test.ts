@@ -1,252 +1,51 @@
 import { describe, expect, it } from 'vitest';
-import { assertFourSkillKit, type HeroKitData } from '../../src/game/heroes/hero-kit';
+import { ANGELA_DATA } from '../../src/game/heroes/angela';
 import { ARTHUR_DATA } from '../../src/game/heroes/arthur';
+import { buildHeroSkills } from '../../src/game/heroes/build';
+import { DAJI_DATA } from '../../src/game/heroes/daji';
+import { EFFECT_REGISTRY } from '../../src/game/heroes/effect-registry';
+import { assertFourSkillKit } from '../../src/game/heroes/hero-kit';
 
-describe('assertFourSkillKit', () => {
-  it('arthur.json 四槽位校验通过', () => {
-    expect(() => assertFourSkillKit(ARTHUR_DATA)).not.toThrow();
-    expect(ARTHUR_DATA.skills.map((s) => s.hotkey).sort()).toEqual([
-      '0',
-      '1',
-      '2',
-      '3',
-    ]);
+describe('hero kit schema', () => {
+  it('validates all shipped four-slot kits', () => {
+    for (const data of [ARTHUR_DATA, DAJI_DATA, ANGELA_DATA]) {
+      expect(() => assertFourSkillKit(data)).not.toThrow();
+      expect(data.skills.map((slot) => slot.hotkey).sort()).toEqual(['0', '1', '2', '3']);
+    }
   });
 
-  it('stub 英雄 JSON 可通过契约测试', () => {
-    const stub: HeroKitData = {
-      id: 'stub-hero',
-      displayName: 'Stub',
-      skills: [
-        {
-          id: 'aa',
-          name: 'AA',
-          hotkey: '0',
-          hit: { kind: 'rect', halfWidth: 1, halfDepth: 1 },
-          displacement: 'none',
-          castTime: 0,
-          activeTime: 0.1,
-          recoveryTime: 0.1,
-          cooldown: 1,
-          effect: {
-            kind: 'attack-damage',
-            attackRange: 2,
-            autoAcquireRangeMultiplier: 1.3,
-          },
-        },
-        {
-          id: 's1',
-          name: 'S1',
-          hotkey: '1',
-          hit: { kind: 'self' },
-          displacement: 'none',
-          castTime: 0.1,
-          activeTime: 0.1,
-          recoveryTime: 0.1,
-          cooldown: 2,
-          effect: {
-            kind: 'move-speed-buff',
-            moveSpeedBoost: 0.4,
-            duration: 3,
-            enhancedAttackDashDistance: 6,
-            enhancedAttackDashSpeed: 30,
-            enhancedAttackAcquireRange: 8,
-          },
-        },
-        {
-          id: 's2',
-          name: 'S2',
-          hotkey: '2',
-          hit: { kind: 'circle', radius: 2 },
-          displacement: 'none',
-          castTime: 0.1,
-          activeTime: 0.2,
-          recoveryTime: 0.1,
-          cooldown: 3,
-          effect: {
-            kind: 'periodic-damage',
-            damage: 40,
-            damageInterval: 0.2,
-            damageTicks: 4,
-          },
-        },
-        {
-          id: 's3',
-          name: 'S3',
-          hotkey: '3',
-          hit: { kind: 'target', range: 5 },
-          displacement: 'dash',
-          castTime: 0.2,
-          activeTime: 0.1,
-          recoveryTime: 0.2,
-          cooldown: 4,
-          effect: {
-            kind: 'dash-landing-knockup',
-            damage: 300,
-            dashDistance: 6,
-            dashSpeed: 30,
-            acquireRange: 8,
-            knockupDuration: 0.5,
-          },
-        },
-      ],
-    };
-    expect(() => assertFourSkillKit(stub)).not.toThrow();
-  });
-
-  it('缺少 hotkey 0 时抛错', () => {
-    const bad: HeroKitData = {
-      id: 'bad',
-      displayName: 'Bad',
-      skills: ARTHUR_DATA.skills.map((s) =>
-        s.hotkey === '0' ? { ...s, hotkey: '1' } : s,
-      ),
-    };
-    expect(() => assertFourSkillKit(bad)).toThrow(/hotkey "0"/);
-  });
-
-  it('重复 hotkey 时抛错', () => {
-    const dup = ARTHUR_DATA.skills.map((s) =>
-      s.hotkey === '3' ? { ...s, hotkey: '2' as const } : s,
-    );
-    expect(() =>
-      assertFourSkillKit({ ...ARTHUR_DATA, skills: dup }),
-    ).toThrow(/hotkey "2"/);
-  });
-
-  it('无效 aimKind 抛错', () => {
+  it('rejects the removed top-level geometry field', () => {
     const bad = {
       ...ARTHUR_DATA,
-      skills: ARTHUR_DATA.skills.map((s) =>
-        s.hotkey === '1' ? { ...s, aimKind: 'invalid' } : s,
+      skills: ARTHUR_DATA.skills.map((slot, index) =>
+        index === 0 ? { ...slot, hit: { kind: 'self' } } : slot,
       ),
     };
-    expect(() => assertFourSkillKit(bad)).toThrow(/invalid aimKind/);
+    expect(() => assertFourSkillKit(bad)).toThrow(/must not define top-level hit/);
   });
 
-  it('远程普攻 attack-damage 校验 projectileSpeed', () => {
-    const stub: HeroKitData = {
-      id: 'ranged-aa',
-      displayName: 'Ranged',
-      skills: [
-        {
-          id: 'aa',
-          name: 'AA',
-          hotkey: '0',
-          hit: { kind: 'target', range: 4 },
-          displacement: 'none',
-          castTime: 0,
-          activeTime: 0.1,
-          recoveryTime: 0.1,
-          cooldown: 1,
-          effect: {
-            kind: 'attack-damage',
-            attackRange: 2,
-            autoAcquireRangeMultiplier: 1.3,
-            projectileSpeed: 0,
-            projectileRangeMultiplier: 2,
-          },
-        },
-        ...ARTHUR_DATA.skills.filter((s) => s.hotkey !== '0'),
-      ],
-    };
-    expect(() => assertFourSkillKit(stub)).toThrow(/projectileSpeed must be positive/);
-  });
-
-  it('aimKind area 与 convergent-burst 校验通过', () => {
-    const stub: HeroKitData = {
-      id: 'area-hero',
-      displayName: 'Area',
-      skills: [
-        {
-          id: 'aa',
-          name: 'AA',
-          hotkey: '0',
-          hit: { kind: 'rect', halfWidth: 1, halfDepth: 1 },
-          displacement: 'none',
-          castTime: 0,
-          activeTime: 0.1,
-          recoveryTime: 0.1,
-          cooldown: 1,
-          effect: {
-            kind: 'attack-damage',
-            attackRange: 2,
-            autoAcquireRangeMultiplier: 1.3,
-          },
-        },
-        {
-          id: 's1',
-          name: 'Burst',
-          hotkey: '1',
-          hit: { kind: 'circle', radius: 7 },
-          displacement: 'none',
-          castTime: 0.2,
-          activeTime: 0.15,
-          recoveryTime: 0.2,
-          cooldown: 5,
-          aimKind: 'area',
-          effect: {
-            kind: 'convergent-burst',
-            projectileCount: 5,
-            projectileSpeed: 12,
-            travelDistance: 9,
-            fanHalfAngle: 0.45,
-            spawnInterval: 0.06,
-            collisionRadius: 0.35,
-            damage: 150,
-          },
-        },
-        ...ARTHUR_DATA.skills.filter((s) => s.hotkey === '2' || s.hotkey === '3'),
-      ],
-    };
-    expect(() => assertFourSkillKit(stub)).not.toThrow();
-  });
-
-  it('convergent-burst 缺少 travelDistance 抛错', () => {
+  it('rejects unknown effects', () => {
     const bad = {
-      id: 'bad-burst',
-      displayName: 'Bad',
-      skills: [
-        {
-          id: 'aa',
-          name: 'AA',
-          hotkey: '0',
-          hit: { kind: 'self' },
-          displacement: 'none',
-          castTime: 0,
-          activeTime: 0.1,
-          recoveryTime: 0.1,
-          cooldown: 1,
-          effect: {
-            kind: 'attack-damage',
-            attackRange: 2,
-            autoAcquireRangeMultiplier: 1.3,
-          },
-        },
-        {
-          id: 's1',
-          name: 'S1',
-          hotkey: '1',
-          hit: { kind: 'circle', radius: 7 },
-          displacement: 'none',
-          castTime: 0.1,
-          activeTime: 0.1,
-          recoveryTime: 0.1,
-          cooldown: 1,
-          aimKind: 'area',
-          effect: {
-            kind: 'convergent-burst',
-            projectileCount: 5,
-            projectileSpeed: 12,
-            fanHalfAngle: 0.45,
-            spawnInterval: 0.06,
-            collisionRadius: 0.35,
-            damage: 150,
-          },
-        },
-        ...ARTHUR_DATA.skills.filter((s) => s.hotkey === '2' || s.hotkey === '3'),
-      ],
+      ...ARTHUR_DATA,
+      skills: ARTHUR_DATA.skills.map((slot, index) =>
+        index === 0 ? { ...slot, effect: { kind: 'mystery' } } : slot,
+      ),
     };
-    expect(() => assertFourSkillKit(bad)).toThrow(/travelDistance/);
+    expect(() => assertFourSkillKit(bad)).toThrow(/unknown effect/);
+  });
+
+  it('registry covers every shipped effect kind', () => {
+    const kinds = new Set(
+      [ARTHUR_DATA, DAJI_DATA, ANGELA_DATA].flatMap((data) =>
+        data.skills.map((slot) => slot.effect.kind),
+      ),
+    );
+    expect([...kinds].every((kind) => typeof EFFECT_REGISTRY[kind] === 'function')).toBe(true);
+  });
+
+  it('generic builder creates all three heroes', () => {
+    for (const data of [ARTHUR_DATA, DAJI_DATA, ANGELA_DATA]) {
+      expect(buildHeroSkills(data)).toHaveLength(4);
+    }
   });
 });

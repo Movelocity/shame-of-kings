@@ -33,13 +33,20 @@ export function isAiming(session: AimingSession): boolean {
   return session.phase === 'aiming';
 }
 
-/** 从 hit shape 解析 area 瞄准最大半径 */
+/** 从 aim 元数据优先解析 area 瞄准最大半径，再从 delivery 推导。 */
 export function resolveAreaAimMaxRange(skill: Skill): number {
-  const hit = skill.hit;
-  if (hit.kind === 'circle') return hit.radius;
-  if (hit.kind === 'cone') return hit.range;
-  if (hit.kind === 'target') return hit.range;
-  if (hit.kind === 'rect') return Math.max(hit.halfWidth, hit.halfDepth) * 2;
+  if (skill.aim?.maxRange !== undefined) return skill.aim.maxRange;
+  const delivery = skill.delivery.mode === 'composite'
+    ? skill.delivery.parts.find((part) =>
+        part.mode === 'instant-hit' || part.mode === 'interval-hit',
+      )
+    : skill.delivery;
+  if (delivery && (delivery.mode === 'instant-hit' || delivery.mode === 'interval-hit')) {
+    const geometry = delivery.geometry;
+    if (geometry.kind === 'circle') return geometry.radius;
+    if (geometry.kind === 'cone' || geometry.kind === 'target') return geometry.range;
+    if (geometry.kind === 'rect') return Math.max(geometry.halfWidth, geometry.halfDepth) * 2;
+  }
   return 7;
 }
 

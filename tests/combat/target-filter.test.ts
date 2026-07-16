@@ -19,6 +19,7 @@ function mkUnit(
     hp,
     hpMax: 100,
     isStatic: false,
+    targetable: true,
     collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
@@ -46,6 +47,16 @@ describe('TargetFilter', () => {
     const neutral = mkUnit('dummy', 'neutral');
     const filter = defaultTargetFilter(caster);
     expect(passesTargetFilter(neutral, filter)).toBe(true);
+  });
+
+  it('targetableOnly 默认排除不可选中单位', () => {
+    const enemy = mkUnit('untargetable', 'red');
+    enemy.targetable = false;
+    expect(passesTargetFilter(enemy, defaultTargetFilter(caster))).toBe(false);
+    expect(passesTargetFilter(enemy, {
+      ...defaultTargetFilter(caster),
+      targetableOnly: false,
+    })).toBe(true);
   });
 
   it('filterTargets 批量过滤', () => {

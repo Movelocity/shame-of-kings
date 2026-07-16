@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { findNearestEnemy } from '../src/game/combat/auto-attack-intent';
-import type { HitShape, Unit } from '../src/game/skills/types';
+import type { HitGeometry, Unit } from '../src/game/skills/types';
 import { DEFAULT_COLLISION_RADIUS } from '../src/game/skills/types';
 import { createWorldState } from '../src/game/world/WorldState';
 import { spawnProjectile } from '../src/game/world/skill-effects/spawn';
@@ -13,6 +15,7 @@ function mkUnit(id: string, team: Unit['team'] = 'blue'): Unit {
     hp: 100,
     hpMax: 100,
     isStatic: false,
+    targetable: true,
     collisionRadius: DEFAULT_COLLISION_RADIUS,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },
@@ -20,8 +23,25 @@ function mkUnit(id: string, team: Unit['team'] = 'blue'): Unit {
 }
 
 describe('architecture regression', () => {
-  it('HitShape 不含 projectile kind', () => {
-    const shapes: HitShape[] = [
+  it('removed skill architecture symbols do not return in src', () => {
+    const files: string[] = [];
+    const visit = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const path = join(dir, entry);
+        if (statSync(path).isDirectory()) visit(path);
+        else if (/\.(ts|tsx|json)$/.test(path)) files.push(path);
+      }
+    };
+    visit(join(process.cwd(), 'src'));
+    const source = files.map((path) => readFileSync(path, 'utf8')).join('\n');
+    for (const removed of ['Damage' + 'Formula', 'Cast' + 'Options', 'Effect' + 'DamageEvent', 'effect-' + 'loader', 'apply' + 'Damage']) {
+      expect(source).not.toContain(removed);
+    }
+    expect(source).not.toMatch(/sourceTeam:\s*['"]blue['"]/);
+  });
+
+  it('HitGeometry 不含 projectile kind', () => {
+    const shapes: HitGeometry[] = [
       { kind: 'self' },
       { kind: 'circle', radius: 1 },
       { kind: 'rect', halfWidth: 1, halfDepth: 1 },
@@ -41,7 +61,7 @@ describe('architecture regression', () => {
     world.spawnEffect(
       spawnProjectile({
         ownerId: player.id,
-        sourceTeam: 'blue',
+        sourceTeam: player.team,
         skillId: 'test',
         origin: { x: 0, z: 0 },
         forwardRad: 0,

@@ -18,7 +18,7 @@
 ## ADDED Requirements
 
 ### Requirement: Effect entity carries castId
-`SkillEffectEntity` SHOULD 包含 `castId` 字段（与 spawn 时 `CastSnapshot.castId` 一致），便于调试与 VFX 关联。
+`SkillEffectEntity` MUST 包含 `castId` 字段（与 spawn 时 `CastSnapshot.castId` 一致），便于调试与 VFX 关联。
 
 #### Scenario: Spawn preserves castId
 - **WHEN** 从 snapshot spawn projectile

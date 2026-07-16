@@ -1,21 +1,14 @@
-// 脱手矩形剑气:整块 rect 沿 forwardRad 前移,路径上敌人各命中一次。
+import { defaultTargetFilter } from '../../combat/target-filter';
+import { settleHit } from '../../combat/settlement';
 import { hitRect } from '../../skills/hits';
-import type { HitShape, TargetFilter, Team, Unit } from '../../skills/types';
+import type { CollisionShape, CombatEvent, DamageSnapshot, Team } from '../../skills/types';
 import type { Vec2 } from '../../skills/vec2';
-import {
-  nextEffectId,
-  resolveDamageAmount,
-  type EffectDamageEvent,
-  type EffectTickContext,
-  type SkillEffectEntity,
-} from './types';
-import type { DamageSnapshot } from '../../skills/types';
+import { effectOwner, nextEffectId, settlementFromDamage, type SkillEffectEntity } from './types';
 
 export interface SweptRectConfig {
   readonly speed: number;
   readonly maxRange: number;
-  readonly halfWidth: number;
-  readonly halfDepth: number;
+  readonly collision: Extract<CollisionShape, { kind: 'rect' }>;
   readonly damage: DamageSnapshot;
   readonly origin: Vec2;
   readonly forwardRad: number;
@@ -34,75 +27,56 @@ export function createSweptRectEffect(
   sourceTeam: Team,
   skillId: string,
   config: SweptRectConfig,
+  castId = `effect-${skillId}`,
 ): SweptRectEffect {
-  const id = nextEffectId('swept-rect');
-  let origin: Vec2 = { x: config.origin.x, z: config.origin.z };
-  const forwardRad = config.forwardRad;
+  let origin = { ...config.origin };
   let distanceTravelled = 0;
   const hitTargetIds = new Set<string>();
-
-  const filter: TargetFilter = {
-    casterId: ownerId,
-    casterTeam: sourceTeam,
-    includeNeutral: true,
-  };
-
-  const rectShape: Extract<HitShape, { kind: 'rect' }> = {
-    kind: 'rect',
-    halfWidth: config.halfWidth,
-    halfDepth: config.halfDepth,
-  };
-
   const entity: SweptRectEffect = {
-    id,
+    id: nextEffectId('swept-rect'),
+    castId,
     ownerId,
     sourceTeam,
     skillId,
     kind: 'swept-rect',
     expired: false,
-    halfWidth: config.halfWidth,
-    halfDepth: config.halfDepth,
-    getOrigin() {
-      return { x: origin.x, z: origin.z };
-    },
-    getForwardRad() {
-      return forwardRad;
-    },
-    tick(dt: number, ctx: EffectTickContext): readonly EffectDamageEvent[] {
+    halfWidth: config.collision.halfWidth,
+    halfDepth: config.collision.halfDepth,
+    getOrigin: () => ({ ...origin }),
+    getForwardRad: () => config.forwardRad,
+    tick(dt, ctx) {
       if (entity.expired) return [];
-
-      const caster = ctx.world.getUnit(ownerId) as Unit | null;
-      if (!caster) {
-        entity.expired = true;
-        return [];
-      }
-
-      const events: EffectDamageEvent[] = [];
-      const hits = hitRect(ctx.world, caster, rectShape, forwardRad, origin, filter);
+      const owner = effectOwner(ctx.world, ownerId, sourceTeam, config.origin);
+      const events: CombatEvent[] = [];
+      const hits = hitRect(
+        ctx.world,
+        owner,
+        config.collision,
+        config.forwardRad,
+        origin,
+        defaultTargetFilter(owner),
+      );
       for (const hit of hits) {
         if (!hit.target || hitTargetIds.has(hit.target.id)) continue;
         hitTargetIds.add(hit.target.id);
-        events.push({
-          targetId: hit.target.id,
-          damage: resolveDamageAmount(config.damage),
-          isCrit: config.damage.isCrit ?? false,
-        });
+        const event = settleHit(
+          { caster: owner, world: ctx.world, now: ctx.now, castSnapshot: {
+            castId, casterId: ownerId, skillId, origin: config.origin, forwardRad: config.forwardRad,
+          } },
+          hit,
+          settlementFromDamage(config.damage),
+        );
+        if (event) events.push(event);
       }
-
       const step = config.speed * dt;
       origin = {
-        x: origin.x + Math.sin(forwardRad) * step,
-        z: origin.z - Math.cos(forwardRad) * step,
+        x: origin.x + Math.sin(config.forwardRad) * step,
+        z: origin.z - Math.cos(config.forwardRad) * step,
       };
       distanceTravelled += step;
-
-      if (distanceTravelled >= config.maxRange) {
-        entity.expired = true;
-      }
-
+      if (distanceTravelled >= config.maxRange) entity.expired = true;
       return events;
     },
   };
-
   return entity;
 }

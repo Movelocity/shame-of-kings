@@ -1,78 +1,28 @@
-// M2 T2.1:SkillInstance 状态机(对应 types.ts 的契约)
-//
-// 状态转移:
-//   cast(前摇) -> active(生效) -> recovery(后摇) -> done
-// 同一时刻只允许一个 active SkillInstance;新施法时由 caller 决定是否取消旧的
-// (proposal §5.2:可中断 — 现实用 cancel())
-//
-// 关键不变量:
-//  - cast 阶段不结算伤害,active 阶段每 tick 用 hit shape 计算
-//  - displacement='dash' 按 dashSpeed 逐帧推进，抵达后才可落地结算
-//  - displacement='teleport' 才会单帧改变坐标
-//  - cooldownTimer 在 onCast 立即置为 cooldown；done 后仍需由上层持续 tick 到 0
-//  - cancel():任意阶段直接置 done,后续 tick 立刻返回
+import { defaultTargetFilter } from '../combat/target-filter';
+import { settleHit } from '../combat/settlement';
+import { resolveHits } from './hits';
 import type {
   CastSnapshot,
-  DamageResult,
-  Hit,
-  HitShape,
+  CombatEvent,
+  HitOrigin,
   Skill,
   SkillContext,
+  SkillDelivery,
   SkillInstance,
   Unit,
-  WorldLike,
 } from './types';
-import { defaultTargetFilter } from '../combat/target-filter';
-import { resolveHits } from './hits';
 import { vec2Add, type Vec2 } from './vec2';
 
-/** @deprecated 使用 CastSnapshot */
-export interface CastOptions {
-  forwardRad: number;
-  origin?: Vec2;
-  dashDistance?: number;
-  targetId?: string;
-}
-
-/** 从 CastSnapshot 或旧版 CastOptions 构建快照 */
-export function toCastSnapshot(
-  skill: Skill,
-  caster: Unit,
-  input: CastSnapshot | CastOptions,
-): CastSnapshot {
-  if ('castId' in input && 'casterId' in input) {
-    return input;
-  }
-  const opts = input as CastOptions;
-  const castOrigin = opts.origin ?? caster.position;
-  return {
-    castId: `cast-${skill.id}-${Date.now()}`,
-    casterId: caster.id,
-    skillId: skill.id,
-    origin: { x: castOrigin.x, z: castOrigin.z },
-    forwardRad: opts.forwardRad,
-    targetId: opts.targetId,
-    dashDistance: opts.dashDistance,
-  };
-}
-
-/** 创建一个 SkillInstance。caller 负责把它推进到 world.activeSkill,
- *  并在每帧 loop tick 里调 instance.tick(dt, ctx) */
-export function startSkill(
-  skill: Skill,
-  caster: Unit,
-  snapshot: CastSnapshot | CastOptions,
-): SkillInstance {
-  const snap = toCastSnapshot(skill, caster, snapshot);
-  const origin = snap.origin;
-  const forward = snap.forwardRad;
-  const dashDistanceTotal = snap.dashDistance ?? skill.dashDistance;
+export function startSkill(skill: Skill, caster: Unit, snapshot: CastSnapshot): SkillInstance {
+  const origin = snapshot.origin;
+  const forward = snapshot.forwardRad;
+  const dashDistanceTotal = snapshot.dashDistance ?? skill.dashDistance;
   let dashDistanceTravelled = 0;
-  let damageTicksDone = 0;
-  let intervalDamageAccum = 0;
-  /** 非 interval 技能:active 内只结算一次命中 */
-  let singleHitResolved = false;
-  const targetFilter = defaultTargetFilter(caster);
+  let intervalElapsed = 0;
+  let instantResolved = false;
+  const intervalTicks = new Map<SkillDelivery, number>();
+  const filter = defaultTargetFilter(caster);
+  const leaves = flattenDelivery(skill.delivery);
   const inst: SkillInstance = {
     skill,
     phase: 'cast',
@@ -80,132 +30,79 @@ export function startSkill(
     cooldownTimer: skill.cooldown,
     origin,
     forwardRad: forward,
-    castSnapshot: snap,
-    damage: [],
+    castSnapshot: snapshot,
+    events: [],
     hitboxActivations: 0,
     dashDistanceTravelled: 0,
     dashDistanceTotal,
     cancel() {
       inst.phase = 'done';
       inst.elapsed = 0;
+      inst.events = [];
     },
-    tick(dt: number, ctx: SkillContext) {
-      // KI-1:cooldownTimer 跨 done 后仍持续减 dt,直到 ≤ 0 时由 caller 解除施法拦截
-      // (见 GameCanvas.onKeyDown)。必须放在 done 早返之前,否则 done 之后 CD 永远卡住。
+    tick(dt, ctx) {
       if (inst.cooldownTimer > 0) {
         const remaining = inst.cooldownTimer - dt;
         inst.cooldownTimer = remaining <= 1e-9 ? 0 : remaining;
       }
-      if (inst.phase === 'done') return inst.damage;
+      inst.events = [];
+      if (inst.phase === 'done') return inst.events;
       inst.elapsed += dt;
-      // 每阶段持续时间到 → 推进到下一阶段
-      // cast/active 阶段结束立即进入下一阶段的逻辑写在同 tick:
-      // 避免"施法 → 生效"多 1 tick 出现手感迟滞
+      const castCtx: SkillContext = { ...ctx, castSnapshot: snapshot };
+
       if (inst.phase === 'cast' && inst.elapsed >= skill.castTime) {
         inst.phase = 'active';
         inst.elapsed = 0;
-        singleHitResolved = false;
+        intervalElapsed = 0;
+        instantResolved = false;
         if (skill.displacement === 'teleport' && dashDistanceTotal > 0) {
-          applyDisplacement(caster, inst.origin, forward, dashDistanceTotal);
+          applyDisplacement(caster, origin, forward, dashDistanceTotal);
           dashDistanceTravelled = dashDistanceTotal;
           inst.dashDistanceTravelled = dashDistanceTotal;
         }
-        // T35.2:进入 active 时回调一次(契约之盾等挂 buff / spawn effect)
-        if (skill.onActivate) {
-          skill.onActivate({ ...ctx, castSnapshot: snap });
-          // 脱手 effect 技能由 world effect 驱动 VFX;无 skill.damage 时不闪 cast hit
-          if (skill.damage !== undefined) {
-            inst.hitboxActivations += 1;
-          }
-        }
+        skill.onActivate?.(castCtx);
       }
+
       if (inst.phase === 'active') {
-        if (
-          skill.displacement === 'dash' &&
-          dashDistanceTravelled < dashDistanceTotal
-        ) {
-          const step = Math.min(
-            dashDistanceTotal - dashDistanceTravelled,
-            skill.dashSpeed * dt,
-          );
+        if (skill.displacement === 'dash' && dashDistanceTravelled < dashDistanceTotal) {
+          const step = Math.min(dashDistanceTotal - dashDistanceTravelled, skill.dashSpeed * dt);
           dashDistanceTravelled += step;
           inst.dashDistanceTravelled = dashDistanceTravelled;
-          applyDisplacement(
-            caster,
-            inst.origin,
-            forward,
-            dashDistanceTravelled,
-          );
+          applyDisplacement(caster, origin, forward, dashDistanceTravelled);
         }
         const displacementComplete =
-          skill.displacement !== 'dash' ||
-          dashDistanceTravelled >= dashDistanceTotal - 1e-9;
-        const useInterval =
-          skill.damageInterval !== undefined &&
-          skill.damageTicks !== undefined &&
-          skill.damageInterval > 0 &&
-          skill.damageTicks > 0;
+          skill.displacement !== 'dash' || dashDistanceTravelled >= dashDistanceTotal - 1e-9;
+        const events: CombatEvent[] = [];
 
-        if (useInterval) {
-          inst.damage = [];
-          intervalDamageAccum += dt;
-          const results: DamageResult[] = [];
+        if (displacementComplete && !instantResolved) {
+          for (const delivery of leaves) {
+            if (delivery.mode !== 'instant-hit') continue;
+            inst.hitboxActivations += 1;
+            events.push(...resolveDeliveryHits(delivery, castCtx, inst, caster, filter));
+          }
+          instantResolved = true;
+        }
+
+        intervalElapsed += dt;
+        for (const delivery of leaves) {
+          if (delivery.mode !== 'interval-hit') continue;
+          let ticksDone = intervalTicks.get(delivery) ?? 0;
           while (
-            damageTicksDone < skill.damageTicks! &&
-            intervalDamageAccum >= (damageTicksDone + 1) * skill.damageInterval!
+            ticksDone < delivery.ticks &&
+            intervalElapsed + 1e-9 >= (ticksDone + 1) * delivery.interval
           ) {
             inst.hitboxActivations += 1;
-            const hits = resolveHits(
-              ctx.world as WorldLike,
-              caster,
-              skill.hit,
-              forward,
-              {
-                origin: hitOrigin(skill, inst, caster),
-                filter: targetFilter,
-                lockedTargetId: snap.targetId,
-              },
-            );
-            if (skill.damage) {
-              for (const h of hits) {
-                const r = skill.damage(ctx, h);
-                if (r) results.push(r);
-              }
-            }
-            damageTicksDone += 1;
+            events.push(...resolveDeliveryHits(delivery, castCtx, inst, caster, filter));
+            ticksDone += 1;
           }
-          if (results.length > 0) inst.damage = results;
-        } else if (!singleHitResolved && skill.damage && displacementComplete) {
-          inst.hitboxActivations += 1;
-          const hits = resolveHits(
-            ctx.world as WorldLike,
-            caster,
-            skill.hit,
-            forward,
-            {
-              origin: hitOrigin(skill, inst, caster),
-              filter: targetFilter,
-              lockedTargetId: snap.targetId,
-            },
-          );
-          const results: DamageResult[] = [];
-          for (const h of hits) {
-            const r = skill.damage(ctx, h);
-            if (r) results.push(r);
-          }
-          inst.damage = results;
-          singleHitResolved = true;
-        } else {
-          inst.damage = [];
+          intervalTicks.set(delivery, ticksDone);
         }
+        inst.events = events;
 
         if (inst.elapsed >= skill.activeTime && displacementComplete) {
           if (skill.onLand) {
             inst.hitboxActivations += 1;
-            const landResults = skill.onLand(ctx);
-            if (landResults.length > 0) {
-              inst.damage = [...inst.damage, ...landResults];
-            }
+            inst.events = [...inst.events, ...skill.onLand(castCtx)];
           }
           inst.phase = 'recovery';
           inst.elapsed = 0;
@@ -215,60 +112,53 @@ export function startSkill(
         inst.phase = 'done';
         inst.elapsed = 0;
       }
-      return inst.damage;
+      return inst.events;
     },
   };
   return inst;
 }
 
-function hitOrigin(skill: Skill, inst: SkillInstance, caster: Unit): Vec2 {
-  return skill.hitOrigin === 'cast' ? inst.origin : caster.position;
+function flattenDelivery(delivery: SkillDelivery): SkillDelivery[] {
+  return delivery.mode === 'composite' ? delivery.parts.flatMap(flattenDelivery) : [delivery];
 }
 
-function applyDisplacement(
+function resolveDeliveryHits(
+  delivery: Extract<SkillDelivery, { mode: 'instant-hit' | 'interval-hit' }>,
+  ctx: SkillContext,
+  inst: SkillInstance,
   caster: Unit,
-  origin: Vec2,
-  forwardRad: number,
-  distance: number,
-): void {
-  // 约定:forwardRad=0 ≡ world -Z;forward 单位向量 = (sin f, -cos f)
-  // final = origin + forward * distance
+  filter: ReturnType<typeof defaultTargetFilter>,
+): CombatEvent[] {
+  const origin = resolveHitOrigin(delivery.hitOrigin, inst, caster);
+  const hits = resolveHits(ctx.world, caster, delivery.geometry, inst.forwardRad, {
+    origin,
+    filter,
+    lockedTargetId: inst.castSnapshot.targetId,
+  });
+  const events: CombatEvent[] = [];
+  for (const hit of hits) {
+    const event = settleHit(ctx, hit, delivery.settlement);
+    if (event) events.push(event);
+  }
+  return events;
+}
+
+function resolveHitOrigin(hitOrigin: HitOrigin | undefined, inst: SkillInstance, caster: Unit): Vec2 {
+  return hitOrigin === 'cast' ? inst.origin : caster.position;
+}
+
+function applyDisplacement(caster: Unit, origin: Vec2, forwardRad: number, distance: number): void {
   caster.position = vec2Add(origin, {
     x: Math.sin(forwardRad) * distance,
     z: -Math.cos(forwardRad) * distance,
   });
 }
 
-/** 简化 DamageFormula:目标可见才结算;不处理暴击/护盾(M3 亚瑟再扩) */
-export function simpleDamage(
-  amount: number,
-  ignoreVisibility = false,
-): (ctx: SkillContext, hit: Hit) => DamageResult | null {
-  return (ctx, hit) => {
-    if (!hit.target) return null;
-    if (!ignoreVisibility && !ctx.world.canSee(ctx.caster, hit.target)) {
-      return null;
-    }
-    return { targetId: hit.target.id, damage: amount, isCrit: false };
-  };
-}
-
-/** 应用伤害结果到单位(扣血);caller 决定是否触发飘字/光圈闪烁 */
-export function applyDamage(units: Iterable<Unit>, results: readonly DamageResult[]): void {
-  const map = new Map<string, Unit>();
-  for (const u of units) map.set(u.id, u);
-  for (const r of results) {
-    const u = map.get(r.targetId);
-    if (!u) continue;
-    u.hp = Math.max(0, u.hp - r.damage);
-  }
-}
-
-/** 工厂:辅助方法,提供给英雄装载用 */
 export function makeSkill(partial: {
   id: string;
   displayName: string;
-  hit: HitShape;
+  delivery: SkillDelivery;
+  aim?: Skill['aim'];
   displacement?: Skill['displacement'];
   castTime: number;
   activeTime: number;
@@ -276,11 +166,6 @@ export function makeSkill(partial: {
   cooldown: number;
   dashDistance?: number;
   dashSpeed?: number;
-  damage?: Skill['damage'];
-  damageInterval?: number;
-  damageTicks?: number;
-  hitOrigin?: Skill['hitOrigin'];
-  /** 缺省 'instant',兼容 M3 现有 4 技能 */
   castMode?: Skill['castMode'];
   onActivate?: Skill['onActivate'];
   onLand?: Skill['onLand'];
@@ -288,7 +173,8 @@ export function makeSkill(partial: {
   return {
     id: partial.id,
     displayName: partial.displayName,
-    hit: partial.hit,
+    delivery: partial.delivery,
+    aim: partial.aim,
     displacement: partial.displacement ?? 'none',
     castTime: partial.castTime,
     activeTime: partial.activeTime,
@@ -296,10 +182,6 @@ export function makeSkill(partial: {
     cooldown: partial.cooldown,
     dashDistance: partial.dashDistance ?? 0,
     dashSpeed: partial.dashSpeed ?? 30,
-    damage: partial.damage,
-    damageInterval: partial.damageInterval,
-    damageTicks: partial.damageTicks,
-    hitOrigin: partial.hitOrigin ?? 'caster',
     castMode: partial.castMode ?? 'instant',
     onActivate: partial.onActivate,
     onLand: partial.onLand,

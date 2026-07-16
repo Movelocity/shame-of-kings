@@ -1,32 +1,30 @@
-// 四槽位英雄 kit 契约:hotkey 0(普攻) + 1/2/3(主动)
-// 元歌 / 镜等后续英雄复用 assertFourSkillKit + HeroKitData
-import type { HitShape, Skill } from '../skills/types';
+import type { HitGeometry, Skill } from '../skills/types';
 
 export const HERO_HOTKEYS = ['0', '1', '2', '3'] as const;
 export type HeroHotkey = (typeof HERO_HOTKEYS)[number];
-
-/** 瞄准方式:与 castMode 正交,驱动指示器与方向/锁定预览 */
 export type AimKind = 'none' | 'direction' | 'lock-target' | 'area';
 export const AIM_KINDS: readonly AimKind[] = ['none', 'direction', 'lock-target', 'area'];
 
-/** 英雄 JSON 中单个技能槽位(数据层) */
+export interface HeroAimData {
+  maxRange?: number;
+  preview?: HitGeometry;
+}
+
 export interface HeroSkillSlotData {
   id: string;
   name: string;
   hotkey: string;
-  hit: HitShape;
   displacement: Skill['displacement'];
   castTime: number;
   activeTime: number;
   recoveryTime: number;
   cooldown: number;
   castMode?: Skill['castMode'];
-  /** 瞄准方式;缺省 none */
   aimKind?: AimKind;
+  aim?: HeroAimData;
   effect: HeroSkillEffectData;
 }
 
-/** effect 可扩展字段;各英雄 loader 按需读取 */
 export type HeroSkillEffectData =
   | {
       kind: 'move-speed-buff';
@@ -36,14 +34,10 @@ export type HeroSkillEffectData =
       enhancedAttackDashSpeed: number;
       enhancedAttackAcquireRange: number;
     }
-  | {
-      kind: 'periodic-damage';
-      damage: number;
-      damageInterval: number;
-      damageTicks: number;
-    }
+  | { kind: 'periodic-damage'; radius: number; damage: number; damageInterval: number; damageTicks: number }
   | {
       kind: 'dash-landing-knockup';
+      radius: number;
       damage: number;
       dashDistance: number;
       dashSpeed: number;
@@ -52,9 +46,9 @@ export type HeroSkillEffectData =
     }
   | {
       kind: 'attack-damage';
+      geometry: HitGeometry;
       attackRange: number;
       autoAcquireRangeMultiplier: number;
-      /** 远程普攻：索敌追踪弹道；maxRange = attackRange × projectileRangeMultiplier */
       projectileSpeed?: number;
       projectileRangeMultiplier?: number;
       homing?: boolean;
@@ -71,18 +65,9 @@ export type HeroSkillEffectData =
       pierce?: number;
       damage: number;
       projectileCount?: number;
-      /** 多枚弹道依次发射间隔(秒);缺省 0 = 同帧齐射 */
       projectileSpawnInterval?: number;
     }
-  | {
-      kind: 'spawn-swept-rect';
-      speed: number;
-      maxRange: number;
-      /** 飞行中剑气矩形半宽/半深(与 hit 瞄准预览可不同) */
-      halfWidth: number;
-      halfDepth: number;
-      damage: number;
-    }
+  | { kind: 'spawn-swept-rect'; speed: number; maxRange: number; halfWidth: number; halfDepth: number; damage: number }
   | {
       kind: 'projectile-then-zone';
       projectileSpeed: number;
@@ -95,13 +80,6 @@ export type HeroSkillEffectData =
       zoneDamage: number;
     }
   | {
-      kind: 'periodic-zone';
-      radius: number;
-      tickInterval: number;
-      ticks: number;
-      damage: number;
-    }
-  | {
       kind: 'convergent-burst';
       projectileCount: number;
       projectileSpeed: number;
@@ -110,52 +88,47 @@ export type HeroSkillEffectData =
       spawnInterval: number;
       collisionRadius: number;
       damage: number;
+    }
+  | {
+      kind: 'beam-channel';
+      geometry: HitGeometry;
+      tickInterval: number;
+      ticks: number;
+      damage: number;
     };
 
-/** 英雄 kit JSON 顶层契约 */
 export interface HeroKitData {
   id: string;
   displayName: string;
+  stats: { hpMax: number; attackDamage: number; moveSpeed: number };
   skills: HeroSkillSlotData[];
 }
 
-/** 普攻索敌/出手距离；含远程弹道时 attackRange 为飞行最大距离 */
-export function resolveAutoAttackRanges(
-  effect: HeroSkillEffectData,
-): { attackRange: number; acquireRange: number } | null {
+export function resolveAutoAttackRanges(effect: HeroSkillEffectData) {
   if (effect.kind !== 'attack-damage') return null;
-  const mult = effect.projectileRangeMultiplier ?? 1;
-  const attackRange = effect.attackRange * mult;
-  return {
-    attackRange,
-    acquireRange: attackRange * effect.autoAcquireRangeMultiplier,
-  };
+  const attackRange = effect.attackRange * (effect.projectileRangeMultiplier ?? 1);
+  return { attackRange, acquireRange: attackRange * effect.autoAcquireRangeMultiplier };
 }
 
 export function isProjectileAutoAttack(effect: HeroSkillEffectData): boolean {
   return effect.kind === 'attack-damage' && effect.projectileSpeed !== undefined;
 }
 
-/**
- * 校验四槽位 hotkey 完整且不重复。
- * 失败抛 Error;通过则静默返回。
- */
 export function assertFourSkillKit(data: unknown): asserts data is HeroKitData {
   if (!isRecord(data) || typeof data.id !== 'string' || typeof data.displayName !== 'string') {
     throw new Error('hero kit: id and displayName must be strings');
   }
+  if (!isRecord(data.stats)) throw new Error(`hero kit "${data.id}": stats required`);
+  for (const key of ['hpMax', 'attackDamage', 'moveSpeed']) {
+    if (typeof data.stats[key] !== 'number') throw new Error(`hero kit "${data.id}": stats.${key} required`);
+  }
   if (!Array.isArray(data.skills) || data.skills.length !== HERO_HOTKEYS.length) {
     throw new Error(`hero kit "${data.id}": must define exactly four skills`);
   }
-  for (const skill of data.skills) assertSkillSlot(data.id, skill);
-
-  const hotkeys = data.skills.map((s) => s.hotkey);
-  for (const hk of HERO_HOTKEYS) {
-    const count = hotkeys.filter((h) => h === hk).length;
-    if (count !== 1) {
-      throw new Error(
-        `hero kit "${data.id}": hotkey "${hk}" must appear exactly once, got ${count}`,
-      );
+  for (const slot of data.skills) assertSkillSlot(data.id, slot);
+  for (const hotkey of HERO_HOTKEYS) {
+    if (data.skills.filter((slot) => slot.hotkey === hotkey).length !== 1) {
+      throw new Error(`hero kit "${data.id}": hotkey "${hotkey}" must appear exactly once`);
     }
   }
 }
@@ -164,132 +137,60 @@ function assertSkillSlot(heroId: string, value: unknown): asserts value is HeroS
   if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string') {
     throw new Error(`hero kit "${heroId}": skill id and name must be strings`);
   }
-  if (!HERO_HOTKEYS.includes(value.hotkey as HeroHotkey)) {
-    throw new Error(`hero kit "${heroId}": invalid hotkey for skill "${value.id}"`);
-  }
-  if (!isHitShape(value.hit) || !['ground', 'dash', 'teleport', 'none'].includes(value.displacement as string)) {
-    throw new Error(`hero kit "${heroId}": invalid targeting for skill "${value.id}"`);
-  }
+  if ('hit' in value) throw new Error(`hero kit "${heroId}": skill "${value.id}" must not define top-level hit`);
+  if (!HERO_HOTKEYS.includes(value.hotkey as HeroHotkey)) throw new Error(`hero kit "${heroId}": invalid hotkey`);
+  if (!['ground', 'dash', 'teleport', 'none'].includes(value.displacement as string)) throw new Error(`hero kit "${heroId}": invalid displacement`);
   for (const key of ['castTime', 'activeTime', 'recoveryTime', 'cooldown'] as const) {
-    if (typeof value[key] !== 'number' || value[key] < 0) {
-      throw new Error(`hero kit "${heroId}": ${key} must be a non-negative number`);
-    }
+    if (typeof value[key] !== 'number' || value[key] < 0) throw new Error(`hero kit "${heroId}": ${key} must be non-negative`);
   }
-  if (value.castMode !== undefined && value.castMode !== 'instant' && value.castMode !== 'targeted') {
-    throw new Error(`hero kit "${heroId}": invalid castMode for skill "${value.id}"`);
+  if (value.aimKind !== undefined && !AIM_KINDS.includes(value.aimKind as AimKind)) throw new Error(`hero kit "${heroId}": invalid aimKind`);
+  if (value.aim !== undefined) {
+    if (!isRecord(value.aim)) throw new Error(`hero kit "${heroId}": invalid aim`);
+    if (value.aim.maxRange !== undefined && (!(value.aim.maxRange as number > 0))) throw new Error(`hero kit "${heroId}": aim.maxRange must be positive`);
+    if (value.aim.preview !== undefined && !isHitGeometry(value.aim.preview)) throw new Error(`hero kit "${heroId}": invalid aim.preview`);
   }
-  if (
-    value.aimKind !== undefined &&
-    !AIM_KINDS.includes(value.aimKind as AimKind)
-  ) {
-    throw new Error(`hero kit "${heroId}": invalid aimKind for skill "${value.id}"`);
-  }
-  assertEffect(heroId, value.id, value.effect);
+  assertEffectConfig(value.effect, heroId, value.id);
 }
 
-function assertEffect(heroId: string, skillId: string, effect: unknown): asserts effect is HeroSkillEffectData {
-  if (!isRecord(effect) || typeof effect.kind !== 'string') {
-    throw new Error(`hero kit "${heroId}": skill "${skillId}" requires an effect.kind`);
-  }
-  const numericFields: Record<HeroSkillEffectData['kind'], readonly string[]> = {
-    'move-speed-buff': [
-      'moveSpeedBoost',
-      'duration',
-      'enhancedAttackDashDistance',
-      'enhancedAttackDashSpeed',
-      'enhancedAttackAcquireRange',
-    ],
-    'periodic-damage': ['damage', 'damageInterval', 'damageTicks'],
-    'dash-landing-knockup': [
-      'damage',
-      'dashDistance',
-      'dashSpeed',
-      'acquireRange',
-      'knockupDuration',
-    ],
+export function assertEffectConfig(
+  effect: unknown,
+  heroId = 'unknown',
+  skillId = 'unknown',
+): asserts effect is HeroSkillEffectData {
+  if (!isRecord(effect) || typeof effect.kind !== 'string') throw new Error(`hero kit "${heroId}": skill "${skillId}" requires effect.kind`);
+  const fields: Record<HeroSkillEffectData['kind'], readonly string[]> = {
+    'move-speed-buff': ['moveSpeedBoost', 'duration', 'enhancedAttackDashDistance', 'enhancedAttackDashSpeed', 'enhancedAttackAcquireRange'],
+    'periodic-damage': ['radius', 'damage', 'damageInterval', 'damageTicks'],
+    'dash-landing-knockup': ['radius', 'damage', 'dashDistance', 'dashSpeed', 'acquireRange', 'knockupDuration'],
     'attack-damage': ['attackRange', 'autoAcquireRangeMultiplier'],
     'spawn-projectile': ['speed', 'maxRange', 'damage'],
     'spawn-swept-rect': ['speed', 'maxRange', 'halfWidth', 'halfDepth', 'damage'],
-    'projectile-then-zone': [
-      'projectileSpeed',
-      'projectileMaxRange',
-      'projectileDamage',
-      'zoneRadius',
-      'zoneTickInterval',
-      'zoneTicks',
-      'zoneDamage',
-    ],
-    'periodic-zone': ['radius', 'tickInterval', 'ticks', 'damage'],
-    'convergent-burst': [
-      'projectileCount',
-      'projectileSpeed',
-      'travelDistance',
-      'fanHalfAngle',
-      'spawnInterval',
-      'collisionRadius',
-      'damage',
-    ],
+    'projectile-then-zone': ['projectileSpeed', 'projectileMaxRange', 'projectileDamage', 'zoneRadius', 'zoneTickInterval', 'zoneTicks', 'zoneDamage'],
+    'convergent-burst': ['projectileCount', 'projectileSpeed', 'travelDistance', 'fanHalfAngle', 'spawnInterval', 'collisionRadius', 'damage'],
+    'beam-channel': ['tickInterval', 'ticks', 'damage'],
   };
-  const fields = numericFields[effect.kind as HeroSkillEffectData['kind']];
-  if (!fields) throw new Error(`hero kit "${heroId}": unknown effect "${effect.kind}"`);
-  for (const field of fields) {
-    if (typeof effect[field] !== 'number' || effect[field] < 0) {
-      throw new Error(`hero kit "${heroId}": effect.${field} must be a non-negative number`);
-    }
+  const required = fields[effect.kind as HeroSkillEffectData['kind']];
+  if (!required) throw new Error(`hero kit "${heroId}": unknown effect "${effect.kind}"`);
+  for (const field of required) {
+    if (typeof effect[field] !== 'number' || (effect[field] as number) < 0) throw new Error(`hero kit "${heroId}": effect.${field} must be non-negative`);
   }
-  if (
-    effect.kind === 'dash-landing-knockup' &&
-    (!((effect.dashSpeed as number) > 0) ||
-      !Number.isFinite(effect.dashSpeed as number))
-  ) {
-    throw new Error(`hero kit "${heroId}": effect.dashSpeed must be positive`);
+  if ((effect.kind === 'attack-damage' || effect.kind === 'beam-channel') && !isHitGeometry(effect.geometry)) throw new Error(`hero kit "${heroId}": effect.geometry required`);
+  if (['spawn-projectile', 'spawn-swept-rect', 'projectile-then-zone', 'convergent-burst'].includes(effect.kind)) {
+    const speed = effect.speed ?? effect.projectileSpeed;
+    if (typeof speed !== 'number' || speed <= 0) throw new Error(`hero kit "${heroId}": effect speed must be positive`);
   }
-  if (effect.kind === 'spawn-projectile' && (effect.speed as number) <= 0) {
-    throw new Error(`hero kit "${heroId}": effect.speed must be positive`);
-  }
-  if (
-    effect.kind === 'spawn-projectile' &&
-    effect.projectileSpawnInterval !== undefined &&
-    (effect.projectileSpawnInterval as number) < 0
-  ) {
-    throw new Error(`hero kit "${heroId}": effect.projectileSpawnInterval must be non-negative`);
-  }
-  if (effect.kind === 'spawn-swept-rect' && (effect.speed as number) <= 0) {
-    throw new Error(`hero kit "${heroId}": effect.speed must be positive`);
-  }
-  if (effect.kind === 'projectile-then-zone' && (effect.projectileSpeed as number) <= 0) {
-    throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
-  }
-  if (effect.kind === 'convergent-burst' && (effect.projectileSpeed as number) <= 0) {
-    throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
-  }
-  if (effect.kind === 'convergent-burst' && (effect.projectileCount as number) < 1) {
-    throw new Error(`hero kit "${heroId}": effect.projectileCount must be >= 1`);
-  }
-  if (effect.kind === 'attack-damage' && effect.projectileSpeed !== undefined) {
-    if ((effect.projectileSpeed as number) <= 0) {
-      throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
-    }
-    const mult = effect.projectileRangeMultiplier as number | undefined;
-    if (mult !== undefined && mult < 1) {
-      throw new Error(`hero kit "${heroId}": effect.projectileRangeMultiplier must be >= 1`);
-    }
-  }
+  if (effect.kind === 'convergent-burst' && effect.projectileCount < 1) throw new Error(`hero kit "${heroId}": projectileCount must be >= 1`);
 }
 
-function isHitShape(value: unknown): value is HitShape {
+function isHitGeometry(value: unknown): value is HitGeometry {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   if (value.kind === 'self') return true;
   if (value.kind === 'circle') return typeof value.radius === 'number' && value.radius >= 0;
-  if (value.kind === 'rect') {
-    return typeof value.halfWidth === 'number' && value.halfWidth >= 0 && typeof value.halfDepth === 'number' && value.halfDepth >= 0;
-  }
-  if (value.kind === 'cone') {
-    return typeof value.range === 'number' && value.range >= 0 && typeof value.halfAngleRad === 'number' && value.halfAngleRad >= 0;
-  }
+  if (value.kind === 'rect') return typeof value.halfWidth === 'number' && value.halfWidth >= 0 && typeof value.halfDepth === 'number' && value.halfDepth >= 0;
+  if (value.kind === 'cone') return typeof value.range === 'number' && value.range >= 0 && typeof value.halfAngleRad === 'number' && value.halfAngleRad >= 0;
   return value.kind === 'target' && typeof value.range === 'number' && value.range >= 0;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null;
 }

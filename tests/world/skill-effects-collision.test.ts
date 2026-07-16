@@ -11,6 +11,7 @@ function mkUnit(x: number, z: number, radius = DEFAULT_COLLISION_RADIUS): Unit {
     hp: 100,
     hpMax: 100,
     isStatic: true,
+    targetable: true,
     collisionRadius: radius,
     facingRad: 0,
     hidden: { inBush: false, outOfVisionFrom: new Set() },

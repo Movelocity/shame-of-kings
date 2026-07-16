@@ -20,7 +20,6 @@
       "id": "shield-of-pact",
       "name": "契约之盾",
       "hotkey": "1",
-      "hit": { "kind": "self" },
       "displacement": "ground",
       "castTime": 0.15,
       "activeTime": 0.2,
@@ -41,7 +40,6 @@
       "id": "whirlwind-strike",
       "name": "回旋打击",
       "hotkey": "2",
-      "hit": { "kind": "circle", "radius": 3 },
       "displacement": "none",
       "castTime": 0.1,
       "activeTime": 2,
@@ -51,6 +49,7 @@
       "aimKind": "none",
       "effect": {
         "kind": "periodic-damage",
+        "radius": 3,
         "damage": 45,
         "damageInterval": 0.5,
         "damageTicks": 4
@@ -60,7 +59,6 @@
       "id": "sacred-judgement",
       "name": "圣剑裁决",
       "hotkey": "3",
-      "hit": { "kind": "circle", "radius": 3 },
       "displacement": "dash",
       "castTime": 0.3,
       "activeTime": 0.15,
@@ -70,6 +68,7 @@
       "aimKind": "none",
       "effect": {
         "kind": "dash-landing-knockup",
+        "radius": 3,
         "damage": 350,
         "dashDistance": 6,
         "dashSpeed": 30,
@@ -81,7 +80,6 @@
       "id": "auto-attack",
       "name": "普攻",
       "hotkey": "0",
-      "hit": { "kind": "rect", "halfWidth": 0.8, "halfDepth": 2.2 },
       "displacement": "none",
       "castTime": 0.0,
       "activeTime": 0.1,
@@ -91,6 +89,7 @@
       "aimKind": "none",
       "effect": {
         "kind": "attack-damage",
+        "geometry": { "kind": "rect", "halfWidth": 0.8, "halfDepth": 2.2 },
         "attackRange": 2.0,
         "autoAcquireRangeMultiplier": 1.3
       }

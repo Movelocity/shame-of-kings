@@ -101,6 +101,8 @@ export function createConvergentBurst(
   );
   const total = spawnPoints.length;
   let spawned = false;
+  let spawnedCount = 0;
+  let elapsed = 0;
 
   function spawnAt(ctx: EffectTickContext, index: number): void {
     const origin = spawnPoints[index];
@@ -125,26 +127,38 @@ export function createConvergentBurst(
         collisionRadius: config.collisionRadius,
         damage: { amount: config.damage },
         hitPolicy: { maxHits: 1 },
+        castId: config.snapshot.castId,
       }),
     );
   }
 
   const entity: ConvergentBurstEffect = {
     id,
+    castId: config.snapshot.castId,
     ownerId: config.snapshot.casterId,
     sourceTeam: config.sourceTeam,
     skillId: config.snapshot.skillId,
     kind: 'convergent-burst',
     expired: false,
-    tick(_dt, ctx) {
+    tick(dt, ctx) {
       if (entity.expired) return [];
-      // 齐射:当帧一次生成全部弹道
-      if (!spawned) {
+      if (config.spawnInterval <= 0 && !spawned) {
         for (let i = 0; i < total; i++) {
           spawnAt(ctx, i);
         }
         spawned = true;
         entity.expired = true;
+      } else if (config.spawnInterval > 0) {
+        if (spawnedCount === 0) {
+          spawnAt(ctx, spawnedCount++);
+        } else {
+          elapsed += dt;
+          while (spawnedCount < total && elapsed + 1e-9 >= config.spawnInterval) {
+            elapsed -= config.spawnInterval;
+            spawnAt(ctx, spawnedCount++);
+          }
+        }
+        if (spawnedCount >= total) entity.expired = true;
       }
       return [];
     },

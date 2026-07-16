@@ -1,4 +1,4 @@
-import { startSkill, type CastOptions } from './runtime';
+import { startSkill } from './runtime';
 import type { CastSnapshot, Skill, SkillContext, SkillInstance, Unit } from './types';
 
 /**
@@ -12,7 +12,7 @@ import type { CastSnapshot, Skill, SkillContext, SkillInstance, Unit } from './t
 export interface SkillBook {
   readonly active: SkillInstance | null;
   canStart(skillId: string): boolean;
-  start(skill: Skill, caster: Unit, options: CastSnapshot | CastOptions): SkillInstance | null;
+  start(skill: Skill, caster: Unit, snapshot: CastSnapshot): SkillInstance | null;
   cooldownRemaining(skillId: string): number;
   tick(dt: number, context: SkillContext): readonly SkillInstance[];
   reset(): void;
