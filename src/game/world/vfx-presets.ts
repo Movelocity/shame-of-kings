@@ -2,8 +2,8 @@
 
 /** 瞄准期 hit 预览(aim-preview) */
 export const AIM_HITBOX_PRESET = {
-  color: 0xffefcc,
-  opacity: 0.2,
+  color: 0x3b82f6,
+  opacity: 0.32,
 } as const;
 
 /** 脱手 effect / 弹道等持续绑定几何 */

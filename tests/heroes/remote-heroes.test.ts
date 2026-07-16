@@ -35,10 +35,10 @@ describe('daji hero kit', () => {
   it('一技能为方向脱手矩形剑气', () => {
     const s1 = DAJI_DATA.skills.find((s) => s.hotkey === '1');
     expect(s1?.aimKind).toBe('direction');
-    expect(s1?.aim?.preview).toEqual({ kind: 'rect', halfWidth: 1.6, halfDepth: 10 });
+    expect(s1?.aim?.preview).toEqual({ kind: 'rect', halfWidth: 1.35, halfDepth: 7.3125 });
     expect(s1?.effect).toMatchObject({
       kind: 'spawn-swept-rect',
-      maxRange: 5,
+      maxRange: 2.5,
       halfWidth: 1.2,
       halfDepth: 0.9,
     });

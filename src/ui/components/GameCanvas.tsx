@@ -334,7 +334,27 @@ export function GameCanvas({
         return;
       }
       const action = resolveDesktopSkillKey(e.key);
-      if (!action) return;
+      if (!action) {
+        // 桌面数字键 1/2/3 → dev 角色切换(被 dev 角色切换条共享同一组快捷键)
+        if (import.meta.env.DEV && /^[1-3]$/.test(e.key)) {
+          e.preventDefault();
+          const slot = Number(e.key) - 1;
+          const nextHero = HERO_IDS[slot];
+          if (!nextHero || nextHero === heroIdRef.current) return;
+          // 切英雄前先清掉可能存在的瞄准/激活技能,避免残影
+          session.cancelAim();
+          session.cancelAutoAttack();
+          heldDesktopSlots.clear();
+          clearSkillStick();
+          clearAimVisuals();
+          setAimState(null);
+          heroIdRef.current = nextHero;
+          setHeroId(nextHero);
+          session.setHero(nextHero);
+          return;
+        }
+        return;
+      }
       e.preventDefault();
       if (action.kind === 'attack') {
         session.requestAutoAttack(action.priority);

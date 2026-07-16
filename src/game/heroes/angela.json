@@ -42,15 +42,15 @@
       "cooldown": 5.0,
       "castMode": "instant",
       "aimKind": "area",
-      "aim": { "maxRange": 12, "preview": { "kind": "circle", "radius": 2.5 } },
+      "aim": { "maxRange": 8, "preview": { "kind": "circle", "radius": 9 } },
       "effect": {
         "kind": "convergent-burst",
         "projectileCount": 5,
         "projectileSpeed": 12,
-        "travelDistance": 12,
+        "travelDistance": 8,
         "fanHalfAngle": 0.85,
         "spawnInterval": 0,
-        "collisionRadius": 0.4,
+        "collisionRadius": 0.2,
         "damage": 150
       }
     },
@@ -65,12 +65,13 @@
       "cooldown": 12.0,
       "castMode": "instant",
       "aimKind": "direction",
+      "aim": { "maxRange": 2.5, "preview": { "kind": "rect", "halfWidth": 1.08, "halfDepth": 5.85 } },
       "effect": {
         "kind": "beam-channel",
-        "geometry": { "kind": "rect", "halfWidth": 1.1, "halfDepth": 8 },
-        "tickInterval": 0.4,
-        "ticks": 5,
-        "damage": 80
+        "geometry": { "kind": "rect", "halfWidth": 0.275, "halfDepth": 8 },
+        "tickInterval": 0.133,
+        "ticks": 15,
+        "damage": 27
       }
     },
     {

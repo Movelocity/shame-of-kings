@@ -1,10 +1,10 @@
 // proposal §3.1 #9 + §5.5 #7:仅 dev 构建展示,FPS / 玩家坐标 / 摇杆向量 / 移动目标
 //
-// 2026-07-14 改:
-//   - 背景透明度 0.9 → 0.5(半透,更"高级感")
-//   - 面板位置:右上 → **左上**(left: 8,top: 8)
-//   - 折叠/展开按钮:贴面板**左内沿**(内部左上角,因左上角无"更左"空间)
-//   - 内嵌"重置"按钮(DEV 与生产路径另有屏幕中上重置按钮,均走同一 resetWorld)
+// 2026-07-16 改:
+//   - 默认**折叠**(useState 初始 true),让出左上角给 dev 角色切换条
+//   - 面板位置:**右上**(top: 8,right: 8)——左上被 dev 角色切换条占用,
+//     调试面板与其错开避免互遮
+//   - 折叠态:右上角独立"展开"按钮;展开态:内部右内沿折叠按钮
 //
 // 点击穿透修复(2026-07-14 b):
 //   容器设 zIndex:70(高于 SkillHud 的 60 与 MobileControls 的 25),
@@ -24,8 +24,8 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
   const [, setTick] = useState(0);
   const lastT = useRef(performance.now());
   const fps = useRef(0);
-  // 折叠态(默认展开)
-  const [collapsed, setCollapsed] = useState<boolean>(false);
+  // 默认折叠,避免跟左上角 dev 角色切换条互遮
+  const [collapsed, setCollapsed] = useState<boolean>(true);
 
   useEffect(() => {
     let raf: number;
@@ -50,7 +50,7 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
   const cam = scene?.follow.camera;
   const camOffset = scene?.follow.getCameraOffset();
 
-  // 折叠态:只显示一个独立"展开"小按钮(贴在 panel 顶位,left 8)
+  // 折叠态:只显示一个独立"展开"小按钮(贴在 panel 顶位,right 8)
   if (collapsed) {
     return (
       <button
@@ -60,8 +60,8 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
         aria-label="展开调试面板"
         style={{
           position: 'fixed',
-          top: 8, // 与原 panel 顶端对齐
-          left: 8,
+          top: 8, // 与展开态顶端对齐
+          right: 8,
           zIndex: 70,
           width: 24,
           height: 24,
@@ -84,16 +84,16 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
     );
   }
 
-  // 展开态:面板(左上角) + 内部左上角折叠按钮
+  // 展开态:面板(右上角) + 内部右内沿折叠按钮
   return (
     <div
       data-testid="debug-overlay"
       style={{
         position: 'fixed',
         top: 8,
-        left: 8, // 移到左上角
+        right: 8,
         zIndex: 70,
-        padding: '8px 10px 8px 28px', // 左 padding 28 给内部折叠按钮留位
+        padding: '8px 28px 8px 10px', // 右 padding 28 给内部折叠按钮留位
         background: 'rgba(255, 255, 255, 0.5)',
         color: '#1a2230',
         border: '1px solid rgba(20, 28, 48, 0.18)',
@@ -104,7 +104,7 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
         pointerEvents: 'none', // 容器透 pointer,只按钮区显式 auto
       }}
     >
-      {/* 内部折叠按钮(贴左内沿) */}
+      {/* 内部折叠按钮(贴右内沿) */}
       <button
         type="button"
         onClick={() => setCollapsed(true)}
@@ -113,7 +113,7 @@ export function DebugOverlay({ sceneRef, onReset }: DebugOverlayProps): JSX.Elem
         style={{
           position: 'absolute',
           top: 6, // 与 panel 内边距对齐
-          left: 6,
+          right: 6,
           width: 18,
           height: 18,
           padding: 0,
