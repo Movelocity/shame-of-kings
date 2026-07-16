@@ -240,12 +240,25 @@ pnpm dev
 | **抬起（非取消区）** | 提交施法，构建 `CastSnapshot` 后 `SkillBook.start` |
 | **抬起在取消区 / Esc** | 取消瞄准，不施法 |
 | **瞄准期移动输入** | 左摇杆 / WASD 优先用于 `aimForwardRad`（`aimKind: direction`）；角色不位移 |
-| **脚下指示器** | `aimKind: direction` 显示箭头；`lock-target` 显示范围环 + 锁定连线；亚瑟 `aimKind: none` 无指示器 |
+| **脚下指示器** | `aimKind: direction` 显示箭头；`lock-target` 显示范围环 + 锁定连线；`area` 显示范围环 + 落点圆标；亚瑟 `aimKind: none` 无指示器 |
 | **普攻 (J / 槽位 0)** | 仍即时施法，不走抬手 |
 
 桌面 DEV：`keydown` 进入瞄准、`keyup` 提交；移动端 SkillHud pointer hold-release 与取消区判定共用。
 
 英雄 `aimKind` 配置见各 `src/game/heroes/*.json`；逻辑入口 `src/game/input/cast-aiming.ts`、`practice-session` 的 `beginAim` / `updateAim` / `commitAim` / `cancelAim`。
+
+### 8.3 Skill-stick 与 area 瞄准
+
+| 行为 | 说明 |
+|---|---|
+| **Skill-stick** | 从技能图标 pointerdown 后拖拽；超过 **8px 死区** 后上报屏幕增量，经视口归一化转为世界偏移 |
+| **优先级** | 存在 skill-stick 拖拽时，忽略移动摇杆 / WASD 的瞄准输入；桌面热键进入瞄准且无 stick 时 fallback 到 WASD |
+| **direction** | 拖拽方向 → `aimForwardRad`（与摇杆约定一致） |
+| **area** | 拖拽偏移 → `targetPoint = 施法者位置 + 世界偏移`，钳制到 `maxRange`（来自 `hit.radius` / `hit.range`） |
+| **area 指示器** | 施法者脚下范围环 + 汇聚点落点圆标 |
+| **提交** | `commitAim` 将 `aimTargetPoint` 写入 `CastSnapshot.targetPoint`；未选定落点时不施法 |
+
+`convergent-burst`（如安琪拉一技能）：读取 `targetPoint` 为汇聚点，多枚弹道从背后扇形等路程飞向该点。实现见 `src/game/world/skill-effects/convergent-burst.ts`。
 
 ---
 

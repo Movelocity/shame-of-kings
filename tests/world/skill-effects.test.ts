@@ -3,6 +3,7 @@ import { createCastSnapshot } from '../../src/game/skills/cast-snapshot';
 import { createWorldState } from '../../src/game/world/WorldState';
 import { spawnProjectile, spawnProjectileThenZone, spawnSweptRectFromCast } from '../../src/game/world/skill-effects/spawn';
 import { createSequentialProjectileBurst } from '../../src/game/world/skill-effects/sequential-projectile-burst';
+import { createConvergentBurst } from '../../src/game/world/skill-effects/convergent-burst';
 import type { Unit } from '../../src/game/skills/types';
 import { DEFAULT_COLLISION_RADIUS } from '../../src/game/skills/types';
 import { createPracticeDummy, PRACTICE_DUMMY_ID } from '../../src/game/units/practice-dummy';
@@ -157,6 +158,52 @@ describe('sequential projectile burst', () => {
     expect(counts[0]).toBe(1);
     expect(Math.max(...counts)).toBeGreaterThanOrEqual(2);
     expect(counts.at(-1)).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('angela convergent-burst', () => {
+  it('5 颗弹道各自碰撞，同一木人桩可受多次命中', () => {
+    const player = mkPlayer();
+    player.position = { x: 0, z: 0 };
+    const dummy = createPracticeDummy();
+    dummy.position = { x: 0, z: -5 };
+    dummy.hp = 5000;
+    dummy.hpMax = 5000;
+    const world = createWorldState({ units: [player, dummy] });
+
+    const snapshot = createCastSnapshot({
+      casterId: player.id,
+      skillId: 'flame-burst',
+      origin: player.position,
+      forwardRad: 0,
+      targetPoint: { x: 0, z: -5 },
+    });
+
+    world.spawnEffect(
+      createConvergentBurst({
+        snapshot,
+        sourceTeam: 'blue',
+        projectileCount: 5,
+        projectileSpeed: 12,
+        travelDistance: 9,
+        fanHalfAngle: 0.45,
+        spawnInterval: 0.06,
+        collisionRadius: 0.35,
+        damage: 150,
+      }),
+    );
+
+    const dt = 1 / 60;
+    let totalHits = 0;
+    for (let i = 0; i < 300; i++) {
+      const result = world.tickEffects(dt);
+      totalHits += result.damageEvents.filter(
+        (e) => e.targetId === PRACTICE_DUMMY_ID,
+      ).length;
+      if (totalHits >= 5 && world.effects.size === 0) break;
+    }
+
+    expect(totalHits).toBe(5);
   });
 });
 

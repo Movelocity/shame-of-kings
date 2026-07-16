@@ -50,9 +50,39 @@ describe('practice-session aiming', () => {
       playerUnit: makePlayer(),
       heroId: 'angela',
     });
-    session.beginAim('1');
+    // 安琪拉二技能仍为 direction
+    session.beginAim('2');
     session.updateAim({ x: 1, y: 0 });
     expect(session.getAimingPreview()?.aimForwardRad).toBeCloseTo(Math.PI / 2, 5);
+  });
+
+  it('area 瞄准 begin → updateAim(targetPoint) → commit 写入 CastSnapshot.targetPoint', () => {
+    const session = createPracticeSession({
+      playerUnit: makePlayer({ x: 0, z: 0 }, ANGELA_DATA.stats.hpMax),
+      heroId: 'angela',
+    });
+    expect(session.beginAim('1')).toBe(true);
+    expect(session.getAimingPreview()?.aimKind).toBe('area');
+    expect(session.getAimingPreview()?.aimTargetPoint).toBeNull();
+    session.updateAim({ x: 0, y: 0 }, { targetPoint: { x: 3, z: -5 } });
+    expect(session.getAimingPreview()?.aimTargetPoint).toEqual({ x: 3, z: -5 });
+    expect(session.commitAim()).toBe(true);
+    expect(session.skillBook.active?.skill.id).toBe('flame-burst');
+    expect(session.skillBook.active?.castSnapshot?.targetPoint).toEqual({
+      x: 3,
+      z: -5,
+    });
+  });
+
+  it('area 瞄准无 targetPoint 时 commit 失败', () => {
+    const session = createPracticeSession({
+      playerUnit: makePlayer({ x: 0, z: 0 }, ANGELA_DATA.stats.hpMax),
+      heroId: 'angela',
+    });
+    session.beginAim('1');
+    expect(session.commitAim()).toBe(false);
+    expect(session.skillBook.active).toBeNull();
+    expect(session.skillBook.cooldownRemaining('flame-burst')).toBe(0);
   });
 
   it('lock-target 无目标时 commit 失败', () => {
@@ -119,11 +149,10 @@ describe('hero aimKind config', () => {
     }
   });
 
-  it('安琪拉主动技能为 direction', () => {
-    for (const hotkey of ['1', '2', '3'] as const) {
-      const skill = ANGELA_DATA.skills.find((s) => s.hotkey === hotkey);
-      expect(skill?.aimKind).toBe('direction');
-    }
+  it('安琪拉一技能 area，二/三技能 direction', () => {
+    expect(ANGELA_DATA.skills.find((s) => s.hotkey === '1')?.aimKind).toBe('area');
+    expect(ANGELA_DATA.skills.find((s) => s.hotkey === '2')?.aimKind).toBe('direction');
+    expect(ANGELA_DATA.skills.find((s) => s.hotkey === '3')?.aimKind).toBe('direction');
   });
 
   it('妲己 1 direction、2/3 lock-target', () => {

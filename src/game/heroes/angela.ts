@@ -75,7 +75,7 @@ export function loadAngelaSkills(): readonly Skill[] {
       };
     }
 
-    if (effect.kind === 'projectile-then-zone') {
+    if (effect.kind === 'projectile-then-zone' || effect.kind === 'convergent-burst') {
       return wrapSkillWithEffectSpawn(base, effect, 'blue');
     }
 

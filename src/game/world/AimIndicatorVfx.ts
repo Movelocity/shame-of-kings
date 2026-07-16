@@ -1,4 +1,4 @@
-// 脚下瞄准方向指示器:贴地箭头/扇形;lock-target 显示锁定连线。
+// 脚下瞄准方向指示器:贴地箭头/扇形;lock-target 显示锁定连线;area 显示范围环+落点标。
 import {
   BufferGeometry,
   DoubleSide,
@@ -15,6 +15,7 @@ import type { Vec2 } from '../skills/vec2';
 import { AIM_INDICATOR_PRESET } from './vfx-presets';
 
 const Y = 0.06;
+const AREA_MARKER_RADIUS = 0.5;
 
 export interface AimIndicatorState {
   aimKind: AimKind;
@@ -22,6 +23,10 @@ export interface AimIndicatorState {
   origin: Vec2;
   lockTarget: Vec2 | null;
   lockRange?: number;
+  /** area: 落点世界坐标 */
+  targetPoint?: Vec2;
+  /** area: 有效范围半径 */
+  maxRange?: number;
 }
 
 export interface AimIndicatorVfxHandle {
@@ -91,6 +96,16 @@ function buildLockRing(range: number): Mesh {
   return new Mesh(geo, mat);
 }
 
+function buildAreaMarker(): Mesh {
+  const geo = new RingGeometry(
+    Math.max(0.08, AREA_MARKER_RADIUS - 0.1),
+    AREA_MARKER_RADIUS,
+    32,
+  );
+  geo.rotateX(-Math.PI / 2);
+  return new Mesh(geo, makeMaterial(AIM_INDICATOR_PRESET.opacity * 0.85));
+}
+
 export function createAimIndicatorVfx(): AimIndicatorVfxHandle {
   const group = new Group();
   group.name = 'aim-indicator-vfx';
@@ -135,6 +150,19 @@ export function createAimIndicatorVfx(): AimIndicatorVfxHandle {
         meshes.push(line);
       }
     }
+
+    if (state.aimKind === 'area') {
+      const maxRange = state.maxRange ?? 7;
+      const ring = buildLockRing(maxRange);
+      applyPose(ring, state.origin, 0);
+      group.add(ring);
+      meshes.push(ring);
+      const marker = buildAreaMarker();
+      const tp = state.targetPoint ?? state.origin;
+      applyPose(marker, tp, 0);
+      group.add(marker);
+      meshes.push(marker);
+    }
   }
 
   function refreshPose(): void {
@@ -163,16 +191,28 @@ export function createAimIndicatorVfx(): AimIndicatorVfxHandle {
         }
       }
     }
+    if (state.aimKind === 'area') {
+      const ring = meshes[meshIdx++];
+      const marker = meshes[meshIdx++];
+      if (ring) applyPose(ring, state.origin, 0);
+      if (marker) {
+        const tp = state.targetPoint ?? state.origin;
+        applyPose(marker, tp, 0);
+      }
+    }
   }
 
   return {
     group,
     show(next) {
-      const kindChanged = state?.aimKind !== next.aimKind;
+      const structureChanged =
+        state?.aimKind !== next.aimKind ||
+        state?.maxRange !== next.maxRange ||
+        (state?.aimKind === 'lock-target' && state?.lockRange !== next.lockRange);
       state = next;
       visible = next.aimKind !== 'none';
       group.visible = visible;
-      if (kindChanged) {
+      if (structureChanged) {
         rebuild();
       } else {
         refreshPose();

@@ -5,6 +5,7 @@ import {
   spawnProjectilesFromCast,
   spawnSweptRectFromCast,
 } from '../world/skill-effects/spawn';
+import { createConvergentBurst } from '../world/skill-effects/convergent-burst';
 import { createSequentialProjectileBurst } from '../world/skill-effects/sequential-projectile-burst';
 import type { WorldStateHandle } from '../world/WorldState';
 import type { HeroSkillEffectData } from './hero-kit';
@@ -98,6 +99,23 @@ export function wrapSkillWithEffectSpawn(
           },
         });
         world.spawnEffect(entity);
+        return;
+      }
+
+      if (effect.kind === 'convergent-burst') {
+        world.spawnEffect(
+          createConvergentBurst({
+            snapshot: snap,
+            sourceTeam,
+            projectileCount: effect.projectileCount,
+            projectileSpeed: effect.projectileSpeed,
+            travelDistance: effect.travelDistance,
+            fanHalfAngle: effect.fanHalfAngle,
+            spawnInterval: effect.spawnInterval,
+            collisionRadius: effect.collisionRadius,
+            damage: effect.damage,
+          }),
+        );
       }
     },
   };

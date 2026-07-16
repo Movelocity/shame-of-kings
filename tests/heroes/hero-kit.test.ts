@@ -152,4 +152,101 @@ describe('assertFourSkillKit', () => {
     };
     expect(() => assertFourSkillKit(stub)).toThrow(/projectileSpeed must be positive/);
   });
+
+  it('aimKind area 与 convergent-burst 校验通过', () => {
+    const stub: HeroKitData = {
+      id: 'area-hero',
+      displayName: 'Area',
+      skills: [
+        {
+          id: 'aa',
+          name: 'AA',
+          hotkey: '0',
+          hit: { kind: 'rect', halfWidth: 1, halfDepth: 1 },
+          displacement: 'none',
+          castTime: 0,
+          activeTime: 0.1,
+          recoveryTime: 0.1,
+          cooldown: 1,
+          effect: {
+            kind: 'attack-damage',
+            attackRange: 2,
+            autoAcquireRangeMultiplier: 1.3,
+          },
+        },
+        {
+          id: 's1',
+          name: 'Burst',
+          hotkey: '1',
+          hit: { kind: 'circle', radius: 7 },
+          displacement: 'none',
+          castTime: 0.2,
+          activeTime: 0.15,
+          recoveryTime: 0.2,
+          cooldown: 5,
+          aimKind: 'area',
+          effect: {
+            kind: 'convergent-burst',
+            projectileCount: 5,
+            projectileSpeed: 12,
+            travelDistance: 9,
+            fanHalfAngle: 0.45,
+            spawnInterval: 0.06,
+            collisionRadius: 0.35,
+            damage: 150,
+          },
+        },
+        ...ARTHUR_DATA.skills.filter((s) => s.hotkey === '2' || s.hotkey === '3'),
+      ],
+    };
+    expect(() => assertFourSkillKit(stub)).not.toThrow();
+  });
+
+  it('convergent-burst 缺少 travelDistance 抛错', () => {
+    const bad = {
+      id: 'bad-burst',
+      displayName: 'Bad',
+      skills: [
+        {
+          id: 'aa',
+          name: 'AA',
+          hotkey: '0',
+          hit: { kind: 'self' },
+          displacement: 'none',
+          castTime: 0,
+          activeTime: 0.1,
+          recoveryTime: 0.1,
+          cooldown: 1,
+          effect: {
+            kind: 'attack-damage',
+            attackRange: 2,
+            autoAcquireRangeMultiplier: 1.3,
+          },
+        },
+        {
+          id: 's1',
+          name: 'S1',
+          hotkey: '1',
+          hit: { kind: 'circle', radius: 7 },
+          displacement: 'none',
+          castTime: 0.1,
+          activeTime: 0.1,
+          recoveryTime: 0.1,
+          cooldown: 1,
+          aimKind: 'area',
+          effect: {
+            kind: 'convergent-burst',
+            projectileCount: 5,
+            projectileSpeed: 12,
+            fanHalfAngle: 0.45,
+            spawnInterval: 0.06,
+            collisionRadius: 0.35,
+            damage: 150,
+          },
+        },
+        ...ARTHUR_DATA.skills.filter((s) => s.hotkey === '2' || s.hotkey === '3'),
+      ],
+    };
+    expect(() => assertFourSkillKit(bad)).toThrow(/travelDistance/);
+  });
 });

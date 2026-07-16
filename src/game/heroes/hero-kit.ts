@@ -6,8 +6,8 @@ export const HERO_HOTKEYS = ['0', '1', '2', '3'] as const;
 export type HeroHotkey = (typeof HERO_HOTKEYS)[number];
 
 /** 瞄准方式:与 castMode 正交,驱动指示器与方向/锁定预览 */
-export type AimKind = 'none' | 'direction' | 'lock-target';
-export const AIM_KINDS: readonly AimKind[] = ['none', 'direction', 'lock-target'];
+export type AimKind = 'none' | 'direction' | 'lock-target' | 'area';
+export const AIM_KINDS: readonly AimKind[] = ['none', 'direction', 'lock-target', 'area'];
 
 /** 英雄 JSON 中单个技能槽位(数据层) */
 export interface HeroSkillSlotData {
@@ -99,6 +99,16 @@ export type HeroSkillEffectData =
       radius: number;
       tickInterval: number;
       ticks: number;
+      damage: number;
+    }
+  | {
+      kind: 'convergent-burst';
+      projectileCount: number;
+      projectileSpeed: number;
+      travelDistance: number;
+      fanHalfAngle: number;
+      spawnInterval: number;
+      collisionRadius: number;
       damage: number;
     };
 
@@ -210,6 +220,15 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
       'zoneDamage',
     ],
     'periodic-zone': ['radius', 'tickInterval', 'ticks', 'damage'],
+    'convergent-burst': [
+      'projectileCount',
+      'projectileSpeed',
+      'travelDistance',
+      'fanHalfAngle',
+      'spawnInterval',
+      'collisionRadius',
+      'damage',
+    ],
   };
   const fields = numericFields[effect.kind as HeroSkillEffectData['kind']];
   if (!fields) throw new Error(`hero kit "${heroId}": unknown effect "${effect.kind}"`);
@@ -240,6 +259,12 @@ function assertEffect(heroId: string, skillId: string, effect: unknown): asserts
   }
   if (effect.kind === 'projectile-then-zone' && (effect.projectileSpeed as number) <= 0) {
     throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
+  }
+  if (effect.kind === 'convergent-burst' && (effect.projectileSpeed as number) <= 0) {
+    throw new Error(`hero kit "${heroId}": effect.projectileSpeed must be positive`);
+  }
+  if (effect.kind === 'convergent-burst' && (effect.projectileCount as number) < 1) {
+    throw new Error(`hero kit "${heroId}": effect.projectileCount must be >= 1`);
   }
   if (effect.kind === 'attack-damage' && effect.projectileSpeed !== undefined) {
     if ((effect.projectileSpeed as number) <= 0) {

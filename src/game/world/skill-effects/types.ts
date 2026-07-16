@@ -18,7 +18,12 @@ export interface SkillEffectEntity {
   readonly ownerId: string;
   readonly sourceTeam: Team;
   readonly skillId: string;
-  readonly kind: 'projectile' | 'persistent-area' | 'swept-rect' | 'projectile-burst';
+  readonly kind:
+    | 'projectile'
+    | 'persistent-area'
+    | 'swept-rect'
+    | 'projectile-burst'
+    | 'convergent-burst';
   expired: boolean;
   /** 施法者离场后是否销毁;默认 false */
   readonly destroyWhenOwnerGone?: boolean;

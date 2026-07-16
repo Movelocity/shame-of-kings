@@ -101,6 +101,7 @@ interface SkillEffectEntity {
 | 火球命中后持续区域 | Projectile 转换/生成 PersistentArea |
 | 持续区域周期伤害 | 每目标 tick 间隔、命中过滤、持续时间 |
 | 安琪拉光束 | 与施法者绑定的 channel/beam，而不是脱手 projectile |
+| 安琪拉一技能汇聚弹道 | `convergent-burst`：`CastSnapshot.targetPoint` 为航线**交汇点**（非灭点）；身后扇形齐射后沿各自直线穿过该点继续飞行（见 `convergent-burst.ts`） |
 
 大火球比较适合这样表达：
 

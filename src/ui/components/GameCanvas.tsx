@@ -6,7 +6,7 @@
 // M3 T3.5:用 WorldState 替换 M2 临时 DebugWorld;DamageFloaters 走 Three.js Sprite;
 // T19:血条挂到角色头上(Sprite + CanvasTexture,billboard 自动面向相机)
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react';
-import { Raycaster, Vector2, Vector3, WebGLRenderer } from 'three';
+import { PerspectiveCamera, Raycaster, Vector2, Vector3, WebGLRenderer } from 'three';
 import { REQUIRED_SHADOW_MAP } from '../../engine/renderer/lights';
 import { createGameScene, type GameSceneHandle } from '../../engine/renderer/scene';
 import { createFixedLoop } from '../../engine/loop/gameLoop';
@@ -57,6 +57,23 @@ function shouldUseHoldRelease(slotHotkey: string, castMode: Skill['castMode'] | 
   return castMode === 'targeted';
 }
 
+/** 屏幕像素拖拽增量 → 世界 XZ 偏移(视口归一化) */
+function screenDeltaToWorldOffset(
+  dxPx: number,
+  dyPx: number,
+  camera: PerspectiveCamera,
+  viewportWidth: number,
+  viewportHeight: number,
+): { x: number; z: number } {
+  const vFov = (camera.fov * Math.PI) / 180;
+  const distance = Math.max(camera.position.y, 1);
+  const visibleHeight = 2 * Math.tan(vFov / 2) * distance;
+  const visibleWidth = visibleHeight * (viewportWidth / Math.max(viewportHeight, 1));
+  const scaleX = visibleWidth / Math.max(viewportWidth, 1);
+  const scaleZ = visibleHeight / Math.max(viewportHeight, 1);
+  return { x: dxPx * scaleX, z: dyPx * scaleZ };
+}
+
 interface GameCanvasProps {
   sceneRef?: React.MutableRefObject<GameSceneHandle | null>;
 }
@@ -78,6 +95,12 @@ export function GameCanvas({
   const aimStateRef = useRef<{ slotHotkey: string; skill: Skill } | null>(null);
   const hitboxVfxRef = useRef<HitboxVfxHandle | null>(null);
   const aimIndicatorRef = useRef<AimIndicatorVfxHandle | null>(null);
+  /** skill-stick 拖拽状态;active 时瞄准优先用 stick,忽略移动摇杆 */
+  const skillStickRef = useRef<{
+    active: boolean;
+    dx: number;
+    dy: number;
+  }>({ active: false, dx: 0, dy: 0 });
   const setAimState = (next: { slotHotkey: string; skill: Skill } | null): void => {
     aimStateRef.current = next;
     setAiming(next);
@@ -85,6 +108,9 @@ export function GameCanvas({
   const clearAimVisuals = (): void => {
     hitboxVfxRef.current?.removeBoundEffect('aim-preview');
     aimIndicatorRef.current?.hide();
+  };
+  const clearSkillStick = (): void => {
+    skillStickRef.current = { active: false, dx: 0, dy: 0 };
   };
 
   const requestAutoAttack = (priority: AutoAttackPriority = 'default'): boolean => {
@@ -99,6 +125,7 @@ export function GameCanvas({
   };
   const cancelAiming = (): void => {
     sessionRef.current?.cancelAim();
+    clearSkillStick();
     clearAimVisuals();
     setAimState(null);
   };
@@ -119,11 +146,13 @@ export function GameCanvas({
     if (!session || !cur) return;
     if (!inside || isInsideCancelRect(clientX, clientY)) {
       session.cancelAim();
+      clearSkillStick();
       clearAimVisuals();
       setAimState(null);
       return;
     }
     session.commitAim();
+    clearSkillStick();
     clearAimVisuals();
     setAimState(null);
   };
@@ -137,6 +166,7 @@ export function GameCanvas({
     if (!skill || !session) return;
     if (aimStateRef.current || !session.skillBook.canStart(skill.id)) return;
     if (shouldUseHoldRelease(slotHotkey, skill.castMode)) {
+      clearSkillStick();
       if (session.beginAim(slotHotkey)) {
         setAimState({ slotHotkey, skill });
       }
@@ -148,6 +178,10 @@ export function GameCanvas({
     priority: Exclude<AutoAttackPriority, 'default'>,
   ): void => {
     requestAutoAttack(priority);
+  };
+  const onSkillDragMove = (info: { slotHotkey: string; dx: number; dy: number }): void => {
+    if (aimStateRef.current?.slotHotkey !== info.slotHotkey) return;
+    skillStickRef.current = { active: true, dx: info.dx, dy: info.dy };
   };
   const onSkillPressEnd = (info: {
     slotHotkey: string;
@@ -280,6 +314,7 @@ export function GameCanvas({
         e.preventDefault();
         session.cancelAim();
         heldDesktopSlots.clear();
+        clearSkillStick();
         clearAimVisuals();
         setAimState(null);
         return;
@@ -293,6 +328,8 @@ export function GameCanvas({
       }
       const skill = heroSkillByHotkey(heroIdRef.current, action.slotHotkey);
       if (shouldUseHoldRelease(action.slotHotkey, skill?.castMode)) {
+        // 桌面热键进入瞄准:无 skill-stick,WASD fallback
+        clearSkillStick();
         if (session.beginAim(action.slotHotkey) && skill) {
           heldDesktopSlots.add(action.slotHotkey);
           setAimState({ slotHotkey: action.slotHotkey, skill });
@@ -309,6 +346,7 @@ export function GameCanvas({
       heldDesktopSlots.delete(action.slotHotkey);
       if (session.getAimingPreview()?.slotHotkey === action.slotHotkey) {
         session.commitAim();
+        clearSkillStick();
         clearAimVisuals();
         setAimState(null);
       }
@@ -350,7 +388,33 @@ export function GameCanvas({
 
         const aimPreviewBefore = session.getAimingPreview();
         if (aimPreviewBefore) {
-          session.updateAim(merged);
+          const stick = skillStickRef.current;
+          if (stick.active) {
+            const aimKind = heroAimKindByHotkey(
+              session.heroId,
+              aimPreviewBefore.slotHotkey,
+            );
+            if (aimKind === 'area') {
+              const worldOffset = screenDeltaToWorldOffset(
+                stick.dx,
+                stick.dy,
+                gameScene.follow.camera,
+                window.innerWidth,
+                window.innerHeight,
+              );
+              session.updateAim(ZERO_JOYSTICK, {
+                targetPoint: {
+                  x: playerUnit.position.x + worldOffset.x,
+                  z: playerUnit.position.z + worldOffset.z,
+                },
+              });
+            } else {
+              // direction / lock-target:屏幕拖拽方向作 aim move input
+              session.updateAim({ x: stick.dx, y: stick.dy });
+            }
+          } else {
+            session.updateAim(merged);
+          }
         }
 
         gameScene.update(dt, pre.suppressManualMove ? ZERO_JOYSTICK : merged);
@@ -378,6 +442,8 @@ export function GameCanvas({
               origin: playerUnit.position,
               lockTarget,
               lockRange,
+              targetPoint: aimPreview.aimTargetPoint ?? undefined,
+              maxRange: aimPreview.maxRange ?? undefined,
             });
           } else {
             aimIndicator.hide();
@@ -538,6 +604,7 @@ export function GameCanvas({
         onPressStart={onSkillPressStart}
         onAttackModePress={onAttackModePress}
         onPressEnd={onSkillPressEnd}
+        onDragMove={onSkillDragMove}
         aimingSlotHotkey={aiming?.slotHotkey ?? null}
         castModes={castModesForHero(heroId)}
         devForceHoldRelease={import.meta.env.DEV}

@@ -61,6 +61,11 @@ export interface SkillHudProps {
     clientY: number;
     inside: boolean;
   }) => void;
+  /**
+   * skill-stick:超过死区后的拖拽增量(屏幕像素,相对 pointerdown 原点)。
+   * 由 GameCanvas 换算为瞄准向量。
+   */
+  onDragMove?: (info: { slotHotkey: string; dx: number; dy: number }) => void;
   /** 当前正在瞄准的技能 slot hotkey(由 GameCanvas 注入);非空时 .skill-hud__cancel 进入激活态 */
   aimingSlotHotkey?: string | null;
   /** T4 KI-4:每个 slot hotkey 的 castMode;缺省全 'instant'(兼容 M3) */
@@ -133,6 +138,9 @@ const DEFAULT_CAST_MODES: Readonly<Record<string, 'instant' | 'targeted'>> = {
   '4': 'instant',
 };
 
+/** skill-stick 死区(px):小于此位移不产生瞄准输入 */
+const SKILL_STICK_DEADZONE_PX = 8;
+
 export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function SkillHud(
   {
     heroSkills,
@@ -140,6 +148,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
     onPressStart,
     // onAttackModePress,
     onPressEnd,
+    onDragMove,
     aimingSlotHotkey = null,
     castModes = DEFAULT_CAST_MODES,
     devForceHoldRelease = false,
@@ -165,6 +174,12 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
   const lastEmitted = useRef<Map<string, { cdInt: number; locked: boolean }>>(
     new Map(),
   );
+  /** skill-stick:pointerdown 屏幕原点 */
+  const dragOriginRef = useRef<{
+    slotHotkey: string;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
 
   useImperativeHandle(
     ref,
@@ -238,9 +253,23 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
       } catch {
         // 部分平台 down 上不接受 capture,后续仍可工作
       }
+      dragOriginRef.current = {
+        slotHotkey: item.slotHotkey,
+        clientX: e.clientX,
+        clientY: e.clientY,
+      };
       onPressStart?.(item.slotHotkey);
     }
+    function onMove(e: ReactPointerEvent<HTMLButtonElement>): void {
+      const origin = dragOriginRef.current;
+      if (!origin || origin.slotHotkey !== item.slotHotkey) return;
+      const dx = e.clientX - origin.clientX;
+      const dy = e.clientY - origin.clientY;
+      if (Math.hypot(dx, dy) < SKILL_STICK_DEADZONE_PX) return;
+      onDragMove?.({ slotHotkey: item.slotHotkey, dx, dy });
+    }
     function onUp(e: ReactPointerEvent<HTMLButtonElement>): void {
+      dragOriginRef.current = null;
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
@@ -254,6 +283,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
       });
     }
     function onCancel(e: ReactPointerEvent<HTMLButtonElement>): void {
+      dragOriginRef.current = null;
       onPressEnd?.({
         slotHotkey: item.slotHotkey,
         clientX: e.clientX,
@@ -277,6 +307,7 @@ export const SkillHud = forwardRef<SkillHudHandle, SkillHudProps>(function Skill
         }
         aria-label={heroSkill.name}
         onPointerDown={onDown}
+        onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onCancel}
       >

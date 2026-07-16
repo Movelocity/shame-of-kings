@@ -5,8 +5,10 @@ import {
   cancelAimingSession,
   createAimingSession,
   isAiming,
+  resolveAreaAimMaxRange,
   updateAimingSession,
 } from '../input/cast-aiming';
+import { aimForwardFromInput } from '../input/aim-forward';
 import { createAutoAttackIntent, facingToward, findNearestEnemy } from '../combat/auto-attack-intent';
 import { clearAllCc, tickAllCc } from '../combat/unit-cc';
 import { createHeroStateStack } from '../buffs/buff-bag';
@@ -23,6 +25,7 @@ import { createCastSnapshot } from '../skills/cast-snapshot';
 import { applyDamage } from '../skills/runtime';
 import { createSkillBook } from '../skills/skill-book';
 import type { DamageResult, Skill, SkillInstance, Unit } from '../skills/types';
+import type { Vec2 } from '../skills/vec2';
 import {
   createPracticeDummy,
   PRACTICE_DUMMY_REGEN_PER_SEC,
@@ -80,6 +83,8 @@ export interface AimingPreview {
   readonly aimForwardRad: number;
   readonly previewTargetId: string | null;
   readonly aimKind: AimKind;
+  readonly aimTargetPoint: Vec2 | null;
+  readonly maxRange: number | null;
 }
 
 interface ResolvedDashEnhancement {
@@ -103,7 +108,10 @@ export interface PracticeSession {
   postTick(input: PracticePostTickInput): PracticePostTickResult;
   tryCastHotkey(hotkey: string): boolean;
   beginAim(hotkey: string): boolean;
-  updateAim(moveInput: { x: number; y: number }): void;
+  updateAim(
+    moveInput: { x: number; y: number },
+    options?: { targetPoint?: Vec2 },
+  ): void;
   commitAim(): boolean;
   cancelAim(): void;
   getAimingPreview(): AimingPreview | null;
@@ -227,6 +235,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       aimKind: AimKind;
       forwardRad: number;
       targetId: string | null;
+      targetPoint?: Vec2 | null;
     },
   ): boolean => {
     if (hotkey === '0') return false;
@@ -245,6 +254,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
     let forwardRad = aimOverrides?.forwardRad ?? playerUnit.facingRad;
     let dashDistance: number | undefined;
     let targetId: string | undefined;
+    let targetPoint: Vec2 | undefined;
 
     if (aimOverrides?.aimKind === 'direction') {
       forwardRad = aimOverrides.forwardRad;
@@ -255,6 +265,13 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       if (target) {
         forwardRad = facingToward(playerUnit.position, target.position);
       }
+    } else if (aimOverrides?.aimKind === 'area') {
+      if (!aimOverrides.targetPoint) return false;
+      targetPoint = {
+        x: aimOverrides.targetPoint.x,
+        z: aimOverrides.targetPoint.z,
+      };
+      forwardRad = aimOverrides.forwardRad;
     } else {
       const enhancementNeedsTarget =
         enhancedDash?.targeting === 'locked' ||
@@ -281,6 +298,7 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       origin: playerUnit.position,
       forwardRad,
       targetId,
+      targetPoint,
       dashDistance,
     });
     const inst = skillBook.start(skill, playerUnit, snapshot);
@@ -341,24 +359,53 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       return true;
     },
 
-    updateAim(moveInput) {
+    updateAim(moveInput, options) {
       if (!isAiming(aiming) || !aiming.skill) return;
       const lockTargetId =
         aiming.aimKind === 'lock-target'
           ? resolveLockTarget(aiming.skill)
           : undefined;
-      updateAimingSession(aiming, {
-        moveInput,
-        lockTargetId,
-        fallbackForwardRad: playerUnit.facingRad,
-      });
+
+      if (aiming.aimKind === 'area') {
+        const maxRange = resolveAreaAimMaxRange(aiming.skill);
+        let targetPoint = options?.targetPoint;
+        if (!targetPoint) {
+          const len = Math.hypot(moveInput.x, moveInput.y);
+          if (len > 1e-6) {
+            const rad = aimForwardFromInput(moveInput, playerUnit.facingRad);
+            const dist = maxRange * 0.6;
+            targetPoint = {
+              x: playerUnit.position.x + Math.sin(rad) * dist,
+              z: playerUnit.position.z - Math.cos(rad) * dist,
+            };
+          }
+        }
+        if (targetPoint) {
+          updateAimingSession(aiming, {
+            targetPoint,
+            origin: playerUnit.position,
+            maxRange,
+          });
+        }
+      } else {
+        updateAimingSession(aiming, {
+          moveInput,
+          lockTargetId,
+          fallbackForwardRad: playerUnit.facingRad,
+        });
+      }
+
       if (aiming.aimKind === 'lock-target' && aiming.previewTargetId) {
         const target = world.getUnit(aiming.previewTargetId);
         if (target) {
           aiming.aimForwardRad = facingToward(playerUnit.position, target.position);
         }
       }
-      if (aiming.aimKind === 'direction' || aiming.aimKind === 'lock-target') {
+      if (
+        aiming.aimKind === 'direction' ||
+        aiming.aimKind === 'lock-target' ||
+        aiming.aimKind === 'area'
+      ) {
         playerUnit.facingRad = aiming.aimForwardRad;
       }
     },
@@ -369,8 +416,13 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
       const aimKind = aiming.aimKind;
       const forwardRad = aiming.aimForwardRad;
       const targetId = aiming.previewTargetId;
+      const targetPoint = aiming.aimTargetPoint;
+      if (aimKind === 'area' && !targetPoint) {
+        cancelAimingSession(aiming);
+        return false;
+      }
       cancelAimingSession(aiming);
-      return castHotkey(hotkey, { aimKind, forwardRad, targetId });
+      return castHotkey(hotkey, { aimKind, forwardRad, targetId, targetPoint });
     },
 
     cancelAim() {
@@ -385,6 +437,9 @@ export function createPracticeSession(init: PracticeSessionInit): PracticeSessio
         aimForwardRad: aiming.aimForwardRad,
         previewTargetId: aiming.previewTargetId,
         aimKind: aiming.aimKind,
+        aimTargetPoint: aiming.aimTargetPoint,
+        maxRange:
+          aiming.aimKind === 'area' ? resolveAreaAimMaxRange(aiming.skill) : null,
       };
     },
 

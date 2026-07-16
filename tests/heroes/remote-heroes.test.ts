@@ -37,7 +37,7 @@ describe('daji hero kit', () => {
     expect(s1?.hit).toEqual({ kind: 'rect', halfWidth: 1.6, halfDepth: 10 });
     expect(s1?.effect).toMatchObject({
       kind: 'spawn-swept-rect',
-      maxRange: 10,
+      maxRange: 5,
       halfWidth: 1.2,
       halfDepth: 0.9,
     });
